@@ -1,0 +1,1078 @@
+# infra-cohort-map snapshot — auto-generated
+# Do not edit by hand; regenerate with `infra-cohort-map scan`.
+schema_version: 1
+generated_at: 2026-05-28T10:05:48Z
+kat1_canonical_hex: 239a7d0d3f1bbe3a98aede01e2ad818c2db60b7177c02e2f015035b2b5b7dbca
+components:
+  - name: "causal"
+    layer: "engine"
+    path: "C:/limitless/engines/causal"
+    substrate: "go"
+    go_module: "github.com/davly/causal"
+    cohort_count: 0
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: false
+    consumer_count: 5
+    consumers:
+      - "domino"
+      - "forgefit"
+      - "gambit"
+      - "gridlock"
+      - "pistachio"
+    internal_deps:
+      - "conduit"
+      - "ingest"
+    notes:
+      - "no R174 cohort packages present"
+  - name: "echo"
+    layer: "engine"
+    path: "C:/limitless/engines/echo"
+    substrate: "go"
+    go_module: "github.com/davly/echo"
+    cohort_count: 2
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: true
+      manifest: true
+      firewall: false
+    load_bearing: true
+    kat1_pinned: false
+    consumer_count: 5
+    consumers:
+      - "gambit"
+      - "gridlock"
+      - "hearthstone"
+      - "pistachio"
+      - "weave"
+    internal_deps:
+      - "causal"
+      - "conduit"
+      - "delve"
+      - "grounded"
+      - "lore"
+  - name: "oracle"
+    layer: "engine"
+    path: "C:/limitless/engines/oracle"
+    substrate: "go"
+    go_module: "github.com/davly/oracle"
+    cohort_count: 0
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: false
+    consumer_count: 1
+    consumers:
+      - "pistachio"
+    internal_deps:
+      - "conduit"
+    notes:
+      - "no R174 cohort packages present"
+  - name: "parallax"
+    layer: "engine"
+    path: "C:/limitless/engines/parallax"
+    substrate: "go"
+    go_module: "github.com/davly/parallax"
+    cohort_count: 4
+    package_status:
+      mirrormark: true
+      honest: true
+      legal: true
+      manifest: true
+      firewall: false
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 7
+    consumers:
+      - "fracture"
+      - "gridlock"
+      - "inkwell"
+      - "lattice"
+      - "liquidvote"
+      - "pistachio"
+      - "trellis"
+    internal_deps:
+      - "causal"
+      - "conduit"
+      - "delve"
+      - "grounded"
+  - name: "synthesis"
+    layer: "engine"
+    path: "C:/limitless/engines/synthesis"
+    substrate: "go"
+    go_module: "github.com/davly/synthesis"
+    cohort_count: 0
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: false
+    consumer_count: 1
+    consumers:
+      - "pistachio"
+    internal_deps:
+      - "conduit"
+    notes:
+      - "no R174 cohort packages present"
+  - name: "aicore"
+    layer: "foundation"
+    path: "C:/limitless/foundation/aicore"
+    substrate: "go"
+    go_module: "github.com/davly/aicore"
+    cohort_count: 0
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: false
+    consumer_count: 0
+  - name: "chronicle"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/chronicle"
+    substrate: "go"
+    go_module: "github.com/davly/chronicle"
+    cohort_count: 5
+    package_status:
+      mirrormark: true
+      honest: true
+      legal: true
+      manifest: true
+      firewall: true
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 2
+    consumers:
+      - "chronicle"
+      - "pistachio"
+    internal_deps:
+      - "lore"
+    notes:
+      - "5-of-5 present but not load-bearing"
+  - name: "codex"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/codex"
+    substrate: "go"
+    go_module: "github.com/davly/codex"
+    cohort_count: 5
+    package_status:
+      mirrormark: true
+      honest: true
+      legal: true
+      manifest: true
+      firewall: true
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 0
+    internal_deps:
+      - "lore"
+    notes:
+      - "5-of-5 present but not load-bearing"
+  - name: "conduit"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/conduit"
+    substrate: "go"
+    go_module: "github.com/davly/conduit"
+    cohort_count: 1
+    package_status:
+      mirrormark: true
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 39
+    consumers:
+      - "aegis"
+      - "authguard"
+      - "casino"
+      - "cipher"
+      - "cloudforge"
+      - "contentguard"
+      - "cortex"
+      - "devforge"
+      - "dipstick"
+      - "fieldstone"
+      - "fixture-forge"
+      - "fleetworks-torque"
+      - "folio"
+      - "gazette"
+      - "howler"
+      - "insights"
+      - "launchpad"
+      - "lens"
+      - "limitless-ops"
+      - "livestream"
+      - "livestream-ps-2026-05-22"
+      - "masonry"
+      - "mesh"
+      - "netwatch"
+      - "omegle-forge"
+      - "ouroboros"
+      - "pigeonhole"
+      - "pistachio"
+      - "polyglot"
+      - "pushforge"
+      - "schedwise"
+      - "smsforge"
+      - "stash"
+      - "torrent"
+      - "triage"
+      - "tunnel"
+      - "viewtube"
+      - "wargames"
+      - "weave"
+    internal_deps:
+      - "ingest"
+      - "lore"
+  - name: "corroboration"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/corroboration"
+    substrate: "go"
+    go_module: "github.com/davly/corroboration"
+    cohort_count: 4
+    package_status:
+      mirrormark: true
+      honest: true
+      legal: true
+      manifest: true
+      firewall: false
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 1
+    consumers:
+      - "pistachio"
+    internal_deps:
+      - "conduit"
+  - name: "crucible-bridge"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/crucible-bridge"
+    substrate: "go"
+    go_module: "github.com/davly/crucible-bridge"
+    cohort_count: 0
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: false
+    consumer_count: 0
+    internal_deps:
+      - "conduit"
+    notes:
+      - "no R174 cohort packages present"
+  - name: "delve"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/delve"
+    substrate: "go"
+    go_module: "github.com/davly/delve"
+    cohort_count: 0
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 38
+    consumers:
+      - "barista"
+      - "cadenza"
+      - "casino"
+      - "cloudforge"
+      - "cortex"
+      - "devforge"
+      - "fixture-forge"
+      - "gazette"
+      - "helix"
+      - "helix-dna"
+      - "horizon"
+      - "lens"
+      - "limitless-ops"
+      - "livestream"
+      - "livestream-ps-2026-05-22"
+      - "mesh"
+      - "needle"
+      - "odds-engine"
+      - "omegle-forge"
+      - "oracle-cache"
+      - "oracle-vote"
+      - "ouroboros"
+      - "pistachio"
+      - "pushforge"
+      - "rollup"
+      - "schedwise"
+      - "screenforge"
+      - "smsforge"
+      - "social-forge"
+      - "stash"
+      - "substrate"
+      - "ticker"
+      - "time-forge"
+      - "torrent"
+      - "traffic"
+      - "translator-live"
+      - "triage"
+      - "viewtube"
+    internal_deps:
+      - "conduit"
+      - "delve"
+      - "ingest"
+      - "nexus"
+    notes:
+      - "no R174 cohort packages present"
+  - name: "escape-service"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/escape-service"
+    substrate: "go"
+    go_module: "github.com/davly/escape-service"
+    cohort_count: 0
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: true
+    kat1_pinned: true
+    consumer_count: 0
+    internal_deps:
+      - "conduit"
+    notes:
+      - "no R174 cohort packages present"
+  - name: "forge-central"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/forge-central"
+    substrate: "go"
+    go_module: "github.com/davly/forge-central"
+    cohort_count: 0
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: false
+    consumer_count: 0
+    internal_deps:
+      - "conduit"
+    notes:
+      - "no R174 cohort packages present"
+  - name: "forge-registry"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/forge-registry"
+    substrate: "go"
+    go_module: "github.com/davly/forge-registry"
+    cohort_count: 4
+    package_status:
+      mirrormark: true
+      honest: true
+      legal: false
+      manifest: true
+      firewall: true
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 0
+    internal_deps:
+      - "conduit"
+      - "lore"
+  - name: "gauntlet"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/gauntlet"
+    substrate: "go"
+    go_module: "github.com/davly/gauntlet"
+    cohort_count: 0
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 0
+    internal_deps:
+      - "conduit"
+      - "lore"
+    notes:
+      - "no R174 cohort packages present"
+  - name: "grounded"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/grounded"
+    substrate: "go"
+    go_module: "github.com/davly/grounded"
+    cohort_count: 1
+    package_status:
+      mirrormark: true
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: true
+    kat1_pinned: true
+    consumer_count: 33
+    consumers:
+      - "barista"
+      - "casino"
+      - "cloudforge"
+      - "cortex"
+      - "devforge"
+      - "fixture-forge"
+      - "gazette"
+      - "lens"
+      - "limitless-ops"
+      - "livestream"
+      - "livestream-ps-2026-05-22"
+      - "mesh"
+      - "mirror"
+      - "odds-engine"
+      - "omegle-forge"
+      - "oracle-cache"
+      - "oracle-vote"
+      - "ouroboros"
+      - "pistachio"
+      - "pushforge"
+      - "rollup"
+      - "schedwise"
+      - "screenforge"
+      - "smsforge"
+      - "social-forge"
+      - "stash"
+      - "ticker"
+      - "time-forge"
+      - "torrent"
+      - "traffic"
+      - "translator-live"
+      - "triage"
+      - "viewtube"
+    internal_deps:
+      - "conduit"
+      - "nexus"
+      - "schema"
+  - name: "ingest"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/ingest"
+    substrate: "go"
+    go_module: "github.com/davly/ingest"
+    cohort_count: 0
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: false
+    consumer_count: 33
+    consumers:
+      - "barista"
+      - "casino"
+      - "cloudforge"
+      - "cortex"
+      - "devforge"
+      - "fixture-forge"
+      - "gazette"
+      - "lens"
+      - "limitless-ops"
+      - "livestream"
+      - "livestream-ps-2026-05-22"
+      - "mesh"
+      - "mirror"
+      - "odds-engine"
+      - "omegle-forge"
+      - "oracle-cache"
+      - "oracle-vote"
+      - "ouroboros"
+      - "pistachio"
+      - "pushforge"
+      - "rollup"
+      - "schedwise"
+      - "screenforge"
+      - "smsforge"
+      - "social-forge"
+      - "stash"
+      - "ticker"
+      - "time-forge"
+      - "torrent"
+      - "traffic"
+      - "translator-live"
+      - "triage"
+      - "viewtube"
+    internal_deps:
+      - "conduit"
+      - "schema"
+    notes:
+      - "no R174 cohort packages present"
+  - name: "kiln"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/kiln"
+    substrate: "go"
+    go_module: "github.com/davly/kiln"
+    cohort_count: 1
+    package_status:
+      mirrormark: true
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 0
+    internal_deps:
+      - "conduit"
+  - name: "limitless-c-crypto"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/limitless-c-crypto"
+    substrate: "c"
+    cohort_count: 0
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 4
+    consumers:
+      - "bedrock-c"
+      - "cortex"
+      - "ember"
+      - "wire"
+    notes:
+      - "no R174 cohort packages present"
+  - name: "lore"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/lore"
+    substrate: "go"
+    go_module: "github.com/davly/lore"
+    cohort_count: 0
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: false
+    consumer_count: 95
+    consumers:
+      - "academy"
+      - "aegis"
+      - "alloy"
+      - "antcolony"
+      - "arbiter-legal"
+      - "archaeologist"
+      - "assembly-line"
+      - "atelier"
+      - "authguard"
+      - "beacon-wear"
+      - "bias-audit"
+      - "blitz"
+      - "blueprint"
+      - "brewer"
+      - "bridge-wasm"
+      - "cairo-forge"
+      - "canopy"
+      - "caravan"
+      - "casino"
+      - "catala-forge"
+      - "choreograph"
+      - "chronicle"
+      - "cloudforge"
+      - "confluence"
+      - "conjure"
+      - "contentguard"
+      - "coolify-forge"
+      - "cortex"
+      - "cruciform"
+      - "crystal-forge"
+      - "curator-museum"
+      - "devforge"
+      - "dialect-red"
+      - "dream-forge"
+      - "dreamcatcher"
+      - "drift"
+      - "dynamo"
+      - "effect"
+      - "elm-forge"
+      - "fixture-forge"
+      - "forge-game"
+      - "forgefit"
+      - "gaia"
+      - "gazette"
+      - "genesis-forge"
+      - "gleam-js"
+      - "greenhouse"
+      - "harvest"
+      - "helicase"
+      - "helix-dna"
+      - "horizon"
+      - "inkwell"
+      - "insights"
+      - "kindle"
+      - "kmp-forge"
+      - "lattice"
+      - "launchpad"
+      - "lens"
+      - "limitless-aegis"
+      - "limitless-audit-chain-demo"
+      - "limitless-ops"
+      - "limitless-stack-showcase"
+      - "livestream"
+      - "livestream-ps-2026-05-22"
+      - "masonry"
+      - "memoria"
+      - "mesh"
+      - "meta-forge"
+      - "mojo-forge"
+      - "moneycheck"
+      - "move-forge"
+      - "navigator"
+      - "netwatch"
+      - "ofgemwatch"
+      - "omegle-forge"
+      - "ouroboros"
+      - "pistachio"
+      - "polyglot"
+      - "prism-mobile"
+      - "pushforge"
+      - "rampart"
+      - "schedwise"
+      - "smsforge"
+      - "superposition"
+      - "synapse"
+      - "torrent"
+      - "trellis"
+      - "triage"
+      - "triage-py"
+      - "trial-ledger"
+      - "tribunal"
+      - "tunnel"
+      - "verdant"
+      - "viewtube"
+      - "wargames"
+    internal_deps:
+      - "conduit"
+    notes:
+      - "no R174 cohort packages present"
+  - name: "membrane-service"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/membrane-service"
+    substrate: "go"
+    go_module: "github.com/davly/membrane-service"
+    cohort_count: 1
+    package_status:
+      mirrormark: true
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 0
+    internal_deps:
+      - "conduit"
+  - name: "mint"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/mint"
+    substrate: "go"
+    go_module: "github.com/davly/mint"
+    cohort_count: 1
+    package_status:
+      mirrormark: true
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 1
+    consumers:
+      - "pistachio"
+    internal_deps:
+      - "conduit"
+  - name: "muse"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/muse"
+    substrate: "go"
+    go_module: "github.com/davly/muse"
+    cohort_count: 1
+    package_status:
+      mirrormark: true
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 1
+    consumers:
+      - "pistachio"
+    internal_deps:
+      - "conduit"
+  - name: "nexus"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/nexus"
+    substrate: "go"
+    go_module: "github.com/nexus/api/sdk/nexus-client-go"
+    cohort_count: 0
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: true
+    kat1_pinned: false
+    consumer_count: 1
+    consumers:
+      - "pigeonhole"
+    notes:
+      - "no R174 cohort packages present"
+  - name: "nexus-backups"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/nexus-backups"
+    substrate: "unknown"
+    cohort_count: 0
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: false
+    consumer_count: 0
+    notes:
+      - "no R174 cohort packages present"
+  - name: "pennant"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/pennant"
+    substrate: "go"
+    go_module: "github.com/davly/pennant"
+    cohort_count: 1
+    package_status:
+      mirrormark: true
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 0
+    internal_deps:
+      - "conduit"
+  - name: "phantom"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/phantom"
+    substrate: "go"
+    go_module: "github.com/davly/phantom"
+    cohort_count: 2
+    package_status:
+      mirrormark: true
+      honest: true
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: true
+    kat1_pinned: true
+    consumer_count: 0
+    internal_deps:
+      - "causal"
+      - "conduit"
+      - "delve"
+      - "echo"
+      - "grounded"
+      - "oracle"
+      - "parallax"
+      - "sentinel"
+  - name: "piper"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/piper"
+    substrate: "go"
+    go_module: "github.com/davly/piper"
+    cohort_count: 1
+    package_status:
+      mirrormark: true
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 0
+    internal_deps:
+      - "conduit"
+  - name: "recall"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/recall"
+    substrate: "go"
+    go_module: "github.com/davly/recall"
+    cohort_count: 1
+    package_status:
+      mirrormark: true
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 34
+    consumers:
+      - "barista"
+      - "casino"
+      - "cloudforge"
+      - "cortex"
+      - "devforge"
+      - "fixture-forge"
+      - "gazette"
+      - "lens"
+      - "limitless-ops"
+      - "livestream"
+      - "livestream-ps-2026-05-22"
+      - "mesh"
+      - "mirror"
+      - "odds-engine"
+      - "omegle-forge"
+      - "oracle-cache"
+      - "oracle-vote"
+      - "ouroboros"
+      - "pigeonhole"
+      - "pistachio"
+      - "pushforge"
+      - "rollup"
+      - "schedwise"
+      - "screenforge"
+      - "smsforge"
+      - "social-forge"
+      - "stash"
+      - "ticker"
+      - "time-forge"
+      - "torrent"
+      - "traffic"
+      - "translator-live"
+      - "triage"
+      - "viewtube"
+    internal_deps:
+      - "conduit"
+  - name: "reservoir"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/reservoir"
+    substrate: "go"
+    go_module: "github.com/davly/reservoir"
+    cohort_count: 0
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: false
+    consumer_count: 0
+    internal_deps:
+      - "conduit"
+    notes:
+      - "no R174 cohort packages present"
+  - name: "schema"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/schema"
+    substrate: "go"
+    go_module: "github.com/davly/schema"
+    cohort_count: 4
+    package_status:
+      mirrormark: true
+      honest: true
+      legal: false
+      manifest: true
+      firewall: true
+    load_bearing: true
+    kat1_pinned: true
+    consumer_count: 1
+    consumers:
+      - "graphql-forge"
+    internal_deps:
+      - "conduit"
+      - "lore"
+  - name: "sentinel"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/sentinel"
+    substrate: "go"
+    go_module: "github.com/davly/sentinel"
+    cohort_count: 0
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: false
+    consumer_count: 33
+    consumers:
+      - "barista"
+      - "casino"
+      - "cloudforge"
+      - "devforge"
+      - "fixture-forge"
+      - "gazette"
+      - "lens"
+      - "limitless-browser"
+      - "limitless-ops"
+      - "livestream"
+      - "livestream-ps-2026-05-22"
+      - "mesh"
+      - "mirror"
+      - "odds-engine"
+      - "omegle-forge"
+      - "oracle-cache"
+      - "oracle-vote"
+      - "ouroboros"
+      - "pistachio"
+      - "pushforge"
+      - "rollup"
+      - "schedwise"
+      - "screenforge"
+      - "smsforge"
+      - "social-forge"
+      - "stash"
+      - "ticker"
+      - "time-forge"
+      - "torrent"
+      - "traffic"
+      - "translator-live"
+      - "triage"
+      - "viewtube"
+    internal_deps:
+      - "conduit"
+      - "lore"
+    notes:
+      - "no R174 cohort packages present"
+  - name: "shadow-service"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/shadow-service"
+    substrate: "go"
+    go_module: "github.com/davly/shadow-service"
+    cohort_count: 0
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: false
+    consumer_count: 0
+    internal_deps:
+      - "conduit"
+    notes:
+      - "no R174 cohort packages present"
+  - name: "shuttle"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/shuttle"
+    substrate: "go"
+    go_module: "github.com/davly/shuttle"
+    cohort_count: 4
+    package_status:
+      mirrormark: true
+      honest: true
+      legal: false
+      manifest: true
+      firewall: true
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 0
+    internal_deps:
+      - "lore"
+  - name: "spyglass"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/spyglass"
+    substrate: "go"
+    go_module: "github.com/davly/spyglass"
+    cohort_count: 4
+    package_status:
+      mirrormark: true
+      honest: true
+      legal: false
+      manifest: true
+      firewall: true
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 0
+    internal_deps:
+      - "conduit"
+      - "lore"
+  - name: "switchyard"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/switchyard"
+    substrate: "go"
+    go_module: "github.com/davly/switchyard"
+    cohort_count: 0
+    package_status:
+      mirrormark: false
+      honest: false
+      legal: false
+      manifest: false
+      firewall: false
+    load_bearing: false
+    kat1_pinned: false
+    consumer_count: 0
+    internal_deps:
+      - "conduit"
+    notes:
+      - "no R174 cohort packages present"
+  - name: "toolforge-service"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/toolforge-service"
+    substrate: "go"
+    go_module: "github.com/davly/toolforge-service"
+    cohort_count: 3
+    package_status:
+      mirrormark: true
+      honest: true
+      legal: false
+      manifest: true
+      firewall: false
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 0
+    internal_deps:
+      - "conduit"
+  - name: "vault"
+    layer: "infrastructure"
+    path: "C:/limitless/infrastructure/vault"
+    substrate: "go"
+    go_module: "github.com/davly/vault"
+    cohort_count: 2
+    package_status:
+      mirrormark: true
+      honest: false
+      legal: false
+      manifest: true
+      firewall: false
+    load_bearing: false
+    kat1_pinned: true
+    consumer_count: 0
+    internal_deps:
+      - "conduit"

@@ -1,0 +1,5 @@
+/infra-cohort-map
+/infra-cohort-map.exe
+*.test
+*.out
+.DS_Store
