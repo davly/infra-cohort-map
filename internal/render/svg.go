@@ -119,8 +119,18 @@ func Render(snap scanner.Snapshot, consumers relate.Consumers, opts Options) []b
 	// Draw edges first (so nodes sit on top).
 	edges(&sb, snap.Components, positions)
 
-	// Draw nodes.
-	for _, p := range positions {
+	// Draw nodes. Iterate positions in a stable (sorted-key) order so the
+	// emitted <circle>/<text> lines are byte-identical run-to-run for the
+	// same input — Go randomizes map iteration order, which would otherwise
+	// break the package's line-oriented diff-review / regulator-reproducible
+	// contract. The rendered image is unaffected (same nodes/coords/radii).
+	nodeKeys := make([]string, 0, len(positions))
+	for name := range positions {
+		nodeKeys = append(nodeKeys, name)
+	}
+	sort.Strings(nodeKeys)
+	for _, name := range nodeKeys {
+		p := positions[name]
 		drawNode(&sb, p.x, p.y, p.r, p.comp, len(consumers[p.comp.Name]))
 	}
 

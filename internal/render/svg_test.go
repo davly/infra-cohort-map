@@ -188,6 +188,88 @@ func TestRender_EmptySnapshotIsValid(t *testing.T) {
 	}
 }
 
+// eightComponentSnapshot returns a snapshot with 8 components spread across
+// all three layers so several share a lane — the map-iteration ordering bug
+// surfaces most reliably when a lane holds multiple nodes.
+func eightComponentSnapshot() scanner.Snapshot {
+	mk := func(name string, layer scanner.Layer, deps ...string) scanner.Component {
+		return scanner.Component{
+			Name:          name,
+			Layer:         layer,
+			Substrate:     "go",
+			PackageStatus: [5]bool{true, false, true, false, true},
+			CohortCount:   3,
+			InternalDeps:  deps,
+		}
+	}
+	return scanner.Snapshot{
+		GeneratedAt: "2026-06-14T00:00:00Z",
+		Components: []scanner.Component{
+			mk("recall", scanner.LayerInfrastructure),
+			mk("codex", scanner.LayerInfrastructure),
+			mk("vault", scanner.LayerInfrastructure),
+			mk("causal", scanner.LayerEngine, "recall"),
+			mk("oracle", scanner.LayerEngine, "vault"),
+			mk("parallax", scanner.LayerEngine),
+			mk("aicore", scanner.LayerFoundation),
+			mk("bedrock", scanner.LayerFoundation),
+		},
+	}
+}
+
+func eightConsumers() relate.Consumers {
+	return relate.Consumers{
+		"recall":   {"academy", "arbiter", "barista"},
+		"codex":    {"barista"},
+		"vault":    {"academy", "arbiter"},
+		"causal":   {"academy"},
+		"oracle":   {"arbiter", "barista"},
+		"parallax": {"academy"},
+		"aicore":   {"academy", "arbiter"},
+		"bedrock":  {"barista"},
+	}
+}
+
+// TestRender_DeterministicOutput is the discriminating regression test for the
+// non-deterministic node-draw loop. Before the fix Render ranged over the
+// positions map directly, so Go's randomized map iteration order emitted the
+// per-node <circle>/<text> lines in a different order on most runs for
+// byte-identical input. After the fix the keys are sorted before iteration, so
+// every render of the same snapshot is byte-identical.
+//
+// This is a genuine fail-before/pass-after test, not a tautology: it was
+// confirmed to FAIL on the pre-fix code (the unsorted map range) by reverting
+// the production change, and to PASS once the sort was restored.
+func TestRender_DeterministicOutput(t *testing.T) {
+	snap := eightComponentSnapshot()
+	cons := eightConsumers()
+	opts := Options{Snapshot: "2026-06-14", Provenance: "determinism-test"}
+
+	const n = 50
+	first := Render(snap, cons, opts)
+	for i := 1; i < n; i++ {
+		got := Render(snap, cons, opts)
+		if !bytes.Equal(first, got) {
+			// Surface the first differing line to make a regression obvious.
+			fl := strings.Split(string(first), "\n")
+			gl := strings.Split(string(got), "\n")
+			diffLine := -1
+			for li := 0; li < len(fl) && li < len(gl); li++ {
+				if fl[li] != gl[li] {
+					diffLine = li
+					break
+				}
+			}
+			if diffLine >= 0 {
+				t.Fatalf("Render output not deterministic: run %d/%d differs from run 0 at line %d:\n  first: %q\n  got:   %q",
+					i, n, diffLine, fl[diffLine], gl[diffLine])
+			}
+			t.Fatalf("Render output not deterministic: run %d/%d differs from run 0 (length %d vs %d)",
+				i, n, len(first), len(got))
+		}
+	}
+}
+
 func max(a, b int) int {
 	if a > b {
 		return a
