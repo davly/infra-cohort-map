@@ -84,8 +84,10 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --foundation-dir=<p>  override foundation/aicore dir")
 	fmt.Fprintln(w, "  --flagships-dir=<p>   override flagships dir")
 	fmt.Fprintln(w, "  --projection=current|projected   banner stamp + projected uplift")
-	fmt.Fprintln(w, "  --width=<int>  --height=<int>     SVG size")
+	fmt.Fprintln(w, "  --width=<int>  --height=<int>     SVG size (must be > 0)")
 	fmt.Fprintln(w, "  --title=<str>  --subtitle=<str>")
+	fmt.Fprintln(w, "  --checkout-root=<path>  emit component paths relative to this root")
+	fmt.Fprintln(w, "  --no-scanned-at         omit generated_at (deterministic YAML/JSON)")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Exit codes:")
 	fmt.Fprintln(w, "  0 OK · 6 usage · 7 I/O · 8 render error")
@@ -96,6 +98,7 @@ type commonFlags struct {
 	enginesDir    string
 	foundationDir string
 	flagshipsDir  string
+	checkoutRoot  string
 }
 
 func registerCommon(fs *flag.FlagSet) *commonFlags {
@@ -105,7 +108,31 @@ func registerCommon(fs *flag.FlagSet) *commonFlags {
 	fs.StringVar(&c.enginesDir, "engines-dir", d.EnginesDir, "path to engines dir")
 	fs.StringVar(&c.foundationDir, "foundation-dir", d.FoundationDir, "path to foundation/aicore dir")
 	fs.StringVar(&c.flagshipsDir, "flagships-dir", relate.DefaultFlagshipsDir(), "path to flagships dir")
+	fs.StringVar(&c.checkoutRoot, "checkout-root", defaultCheckoutRoot(), "checkout root paths are emitted relative to (machine-independent YAML/JSON)")
 	return c
+}
+
+// defaultCheckoutRoot is the common ancestor of the default scan roots
+// (infrastructure / engines / foundation all live under it). Emitting
+// component paths relative to it keeps the snapshot reproducible across
+// operator machines.
+func defaultCheckoutRoot() string {
+	return filepath.FromSlash("C:/limitless")
+}
+
+// relativizePath returns p expressed relative to root using forward
+// slashes. If root is empty, or p escapes root (Rel yields a "..")
+// path, the absolute slash-path is returned unchanged so nothing is
+// silently mangled.
+func relativizePath(root, p string) string {
+	if root == "" {
+		return filepath.ToSlash(p)
+	}
+	rel, err := filepath.Rel(root, p)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(os.PathSeparator)) {
+		return filepath.ToSlash(p)
+	}
+	return filepath.ToSlash(rel)
 }
 
 func (c *commonFlags) Roots() scanner.Roots {
@@ -128,7 +155,18 @@ func cmdRender(args []string, stdout, stderr io.Writer) int {
 	subtitle := fs.String("subtitle", "", "subtitle text")
 	snapshot := fs.String("snapshot-date", time.Now().UTC().Format("2006-01-02"), "snapshot date stamp")
 	projection := fs.String("projection", "current", "current | projected")
+	noScannedAt := fs.Bool("no-scanned-at", false, "omit the generated_at timestamp (deterministic output)")
 	if err := fs.Parse(args); err != nil {
+		return exitUsage
+	}
+
+	const maxDim = 100000
+	if *width <= 0 || *height <= 0 {
+		fmt.Fprintln(stderr, "render: --width and --height must be positive")
+		return exitUsage
+	}
+	if *width > maxDim || *height > maxDim {
+		fmt.Fprintf(stderr, "render: --width and --height must be <= %d\n", maxDim)
 		return exitUsage
 	}
 
@@ -137,7 +175,9 @@ func cmdRender(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "render: scan:", err)
 		return exitIO
 	}
-	snap.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
+	if !*noScannedAt {
+		snap.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
+	}
 
 	// Feed the live scan's component names into the consumer counter so
 	// the search set is the infra that actually exists on disk — this
@@ -168,7 +208,7 @@ func cmdRender(args []string, stdout, stderr io.Writer) int {
 		out := render.Render(snap, consumers, opts)
 		return writeOut(*outPath, out, stdout, stderr)
 	case "yaml":
-		out := []byte(toYAML(snap, consumers))
+		out := []byte(toYAML(snap, consumers, common.checkoutRoot))
 		return writeOut(*outPath, out, stdout, stderr)
 	default:
 		fmt.Fprintln(stderr, "render: --format must be svg|yaml")
@@ -182,6 +222,7 @@ func cmdScan(args []string, stdout, stderr io.Writer) int {
 	common := registerCommon(fs)
 	outPath := fs.String("out", "-", "path to write YAML (- for stdout)")
 	format := fs.String("format", "yaml", "yaml")
+	noScannedAt := fs.Bool("no-scanned-at", false, "omit the generated_at timestamp (deterministic output)")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -194,7 +235,9 @@ func cmdScan(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "scan:", err)
 		return exitIO
 	}
-	snap.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
+	if !*noScannedAt {
+		snap.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
+	}
 	consumers, err := relate.CountConsumers(common.flagshipsDir, componentNames(snap))
 	if err != nil {
 		// Consumer count is decoration — emit snapshot without it, but
@@ -202,7 +245,7 @@ func cmdScan(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "scan: consumer count unavailable:", err)
 		consumers = relate.Consumers{}
 	}
-	out := []byte(toYAML(snap, consumers))
+	out := []byte(toYAML(snap, consumers, common.checkoutRoot))
 	return writeOut(*outPath, out, stdout, stderr)
 }
 
@@ -295,18 +338,22 @@ func applyProjection(snap scanner.Snapshot) scanner.Snapshot {
 // toYAML emits a deterministic YAML representation of the snapshot
 // (pure stdlib — no gopkg.in/yaml.v3 dependency). Format is a strict
 // subset of YAML so external tooling can pin to it.
-func toYAML(snap scanner.Snapshot, cons relate.Consumers) string {
+func toYAML(snap scanner.Snapshot, cons relate.Consumers, pathRoot string) string {
 	var sb strings.Builder
 	sb.WriteString("# infra-cohort-map snapshot — auto-generated\n")
 	sb.WriteString("# Do not edit by hand; regenerate with `infra-cohort-map scan`.\n")
 	sb.WriteString("schema_version: 1\n")
-	sb.WriteString("generated_at: " + snap.GeneratedAt + "\n")
+	if snap.GeneratedAt == "" {
+		sb.WriteString("generated_at:\n")
+	} else {
+		sb.WriteString("generated_at: " + snap.GeneratedAt + "\n")
+	}
 	sb.WriteString("kat1_canonical_hex: " + scanner.KAT1HexCanonical + "\n")
 	sb.WriteString("components:\n")
 	for _, c := range snap.Components {
 		sb.WriteString("  - name: " + yamlStr(c.Name) + "\n")
 		sb.WriteString("    layer: " + yamlStr(string(c.Layer)) + "\n")
-		sb.WriteString("    path: " + yamlStr(filepath.ToSlash(c.Path)) + "\n")
+		sb.WriteString("    path: " + yamlStr(relativizePath(pathRoot, c.Path)) + "\n")
 		sb.WriteString("    substrate: " + yamlStr(c.Substrate) + "\n")
 		if c.GoModule != "" {
 			sb.WriteString("    go_module: " + yamlStr(c.GoModule) + "\n")
