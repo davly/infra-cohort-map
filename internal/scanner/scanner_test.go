@@ -3,6 +3,7 @@ package scanner
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -183,6 +184,31 @@ func TestDetectLoadBearing_TestOnlyIsFalse(t *testing.T) {
 	writeFile(t, root, "x_test.go", "package foo\n\nfunc TestX() { mirrormark.Sign() }\n")
 	if detectLoadBearing(root) {
 		t.Fatal("load-bearing: test-only Sign call must be reported false")
+	}
+}
+
+func TestDetectLoadBearing_OversizeFileSkipped(t *testing.T) {
+	// A .go file larger than the 1MB read cap is not scanned for the
+	// Sign needle (matches detectKAT1Pin's guard) — so a Sign call that
+	// lives only inside such a giant file is reported false. The point
+	// is the cap is active and the read is bounded.
+	root := filepath.Join(t.TempDir(), "huge")
+	pad := strings.Repeat("// padding to push past the 1MB read cap\n", 30000)
+	if len(pad) <= 1<<20 {
+		t.Fatalf("test padding too small: %d bytes, need > %d", len(pad), 1<<20)
+	}
+	writeFile(t, filepath.Join(root, "internal", "svc"), "big.go",
+		"package svc\n"+pad+"\nfunc Use() string { return mirrormark.Sign([32]byte{}, nil, nil) }\n")
+	if detectLoadBearing(root) {
+		t.Fatal("load-bearing: Sign call inside an oversize file must be skipped (read cap)")
+	}
+
+	// A small file with the same call IS detected — cap does not block
+	// ordinary source.
+	writeFile(t, filepath.Join(root, "internal", "small"), "small.go",
+		"package small\n\nfunc Use() string { return mirrormark.Sign([32]byte{}, nil, nil) }\n")
+	if !detectLoadBearing(root) {
+		t.Fatal("load-bearing: small Sign call-site must still be detected")
 	}
 }
 

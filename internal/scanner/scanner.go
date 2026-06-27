@@ -51,17 +51,17 @@ const (
 // fixed-length array keeps the on-disk manifest schema stable when new
 // cohort packages join.
 type Component struct {
-	Name          string         `yaml:"name" json:"name"`
-	Layer         Layer          `yaml:"layer" json:"layer"`
-	Path          string         `yaml:"path" json:"path"`
-	Substrate     string         `yaml:"substrate" json:"substrate"`
-	GoModule      string         `yaml:"go_module,omitempty" json:"go_module,omitempty"`
-	PackageStatus [5]bool        `yaml:"package_status" json:"package_status"`
-	CohortCount   int            `yaml:"cohort_count" json:"cohort_count"`
-	LoadBearing   bool           `yaml:"load_bearing" json:"load_bearing"`
-	KAT1Pinned    bool           `yaml:"kat1_pinned" json:"kat1_pinned"`
-	InternalDeps  []string       `yaml:"internal_deps,omitempty" json:"internal_deps,omitempty"`
-	Notes         []string       `yaml:"notes,omitempty" json:"notes,omitempty"`
+	Name          string   `yaml:"name" json:"name"`
+	Layer         Layer    `yaml:"layer" json:"layer"`
+	Path          string   `yaml:"path" json:"path"`
+	Substrate     string   `yaml:"substrate" json:"substrate"`
+	GoModule      string   `yaml:"go_module,omitempty" json:"go_module,omitempty"`
+	PackageStatus [5]bool  `yaml:"package_status" json:"package_status"`
+	CohortCount   int      `yaml:"cohort_count" json:"cohort_count"`
+	LoadBearing   bool     `yaml:"load_bearing" json:"load_bearing"`
+	KAT1Pinned    bool     `yaml:"kat1_pinned" json:"kat1_pinned"`
+	InternalDeps  []string `yaml:"internal_deps,omitempty" json:"internal_deps,omitempty"`
+	Notes         []string `yaml:"notes,omitempty" json:"notes,omitempty"`
 }
 
 // Snapshot is the full scanner output.
@@ -348,6 +348,14 @@ func detectLoadBearing(path string) bool {
 		}
 		name := d.Name()
 		if !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			return nil
+		}
+		// Cap the read at 1MB to match detectKAT1Pin's guard — Sign
+		// call-sites live in ordinary source files, never in huge
+		// generated/blob files, so an unbounded ReadFile is needless
+		// memory pressure.
+		fi, err := os.Stat(p)
+		if err != nil || fi.Size() > 1<<20 {
 			return nil
 		}
 		b, err := os.ReadFile(p)
