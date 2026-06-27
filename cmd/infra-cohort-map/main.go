@@ -92,10 +92,10 @@ func printUsage(w io.Writer) {
 }
 
 type commonFlags struct {
-	infraDir     string
-	enginesDir   string
+	infraDir      string
+	enginesDir    string
 	foundationDir string
-	flagshipsDir string
+	flagshipsDir  string
 }
 
 func registerCommon(fs *flag.FlagSet) *commonFlags {
@@ -139,7 +139,11 @@ func cmdRender(args []string, stdout, stderr io.Writer) int {
 	}
 	snap.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
 
-	consumers, err := relate.CountConsumers(common.flagshipsDir, nil)
+	// Feed the live scan's component names into the consumer counter so
+	// the search set is the infra that actually exists on disk — this
+	// removes the drift risk between scanner.knownInfraNames() and the
+	// relate package's fallback list.
+	consumers, err := relate.CountConsumers(common.flagshipsDir, componentNames(snap))
 	if err != nil {
 		fmt.Fprintln(stderr, "render: relate:", err)
 		return exitIO
@@ -191,9 +195,11 @@ func cmdScan(args []string, stdout, stderr io.Writer) int {
 		return exitIO
 	}
 	snap.GeneratedAt = time.Now().UTC().Format(time.RFC3339)
-	consumers, err := relate.CountConsumers(common.flagshipsDir, nil)
+	consumers, err := relate.CountConsumers(common.flagshipsDir, componentNames(snap))
 	if err != nil {
-		// Consumer count is decoration — emit snapshot without it.
+		// Consumer count is decoration — emit snapshot without it, but
+		// surface the reason rather than silently reporting zeroes.
+		fmt.Fprintln(stderr, "scan: consumer count unavailable:", err)
 		consumers = relate.Consumers{}
 	}
 	out := []byte(toYAML(snap, consumers))
@@ -207,7 +213,14 @@ func cmdList(args []string, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
-	consumers, err := relate.CountConsumers(common.flagshipsDir, nil)
+	// Scan first so the consumer counter searches for the infra that
+	// actually exists on disk (shared source of truth with render/scan).
+	snap, err := scanner.ScanAll(common.Roots())
+	if err != nil {
+		fmt.Fprintln(stderr, "list: scan:", err)
+		return exitIO
+	}
+	consumers, err := relate.CountConsumers(common.flagshipsDir, componentNames(snap))
 	if err != nil {
 		fmt.Fprintln(stderr, "list:", err)
 		return exitIO
@@ -237,6 +250,19 @@ func writeOut(path string, data []byte, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "wrote %s (%d bytes)\n", path, len(data))
 	return exitOK
+}
+
+// componentNames returns the names of the scanned components. Passing
+// these into relate.CountConsumers makes the live scan — not a hardcoded
+// fallback list — the authority on which infra to count consumers for.
+// An empty result (e.g. infra dirs absent on a CI box) lets
+// CountConsumers fall back to its built-in default list.
+func componentNames(snap scanner.Snapshot) []string {
+	names := make([]string, 0, len(snap.Components))
+	for _, c := range snap.Components {
+		names = append(names, c.Name)
+	}
+	return names
 }
 
 func countAllConsumers(c relate.Consumers) int {

@@ -135,6 +135,40 @@ func TestCountConsumers_DedupesSameFlagshipTwice(t *testing.T) {
 	}
 }
 
+func TestCountConsumers_GenericDirNotCounted(t *testing.T) {
+	tmp := t.TempDir()
+	// "schema" is a known infra name but here it is a generic GraphQL
+	// schema dir nested under a non-anchor parent ("graphql") — it must
+	// NOT be counted as infra consumption. Before the anchor fix this
+	// over-counted to [alpha].
+	writeFile(t, filepath.Join(tmp, "alpha", "graphql", "schema"), "x.go", "package schema\n")
+	// "lore" sitting under an anchor parent (internal) DOES count.
+	writeFile(t, filepath.Join(tmp, "alpha", "internal", "lore"), "x.go", "package lore\n")
+	c, err := CountConsumers(tmp, []string{"schema", "lore"})
+	if err != nil {
+		t.Fatalf("CountConsumers: %v", err)
+	}
+	if len(c["schema"]) != 0 {
+		t.Fatalf("generic schema dir over-counted: got %v want []", c["schema"])
+	}
+	if len(c["lore"]) != 1 || c["lore"][0] != "alpha" {
+		t.Fatalf("lore under internal: got %v want [alpha]", c["lore"])
+	}
+}
+
+func TestCountConsumers_DialectParentAnchored(t *testing.T) {
+	tmp := t.TempDir()
+	// kotlin snake-cased pattern: <flagship>/<dialect>/<infra>/
+	writeFile(t, filepath.Join(tmp, "alpha", "kotlin", "recall"), "x.go", "package recall\n")
+	c, err := CountConsumers(tmp, []string{"recall"})
+	if err != nil {
+		t.Fatalf("CountConsumers: %v", err)
+	}
+	if len(c["recall"]) != 1 || c["recall"][0] != "alpha" {
+		t.Fatalf("dialect-anchored recall: got %v want [alpha]", c["recall"])
+	}
+}
+
 func TestDefaultInfraNames_NonEmpty(t *testing.T) {
 	n := DefaultInfraNames()
 	if len(n) < 10 {

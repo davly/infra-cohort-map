@@ -73,8 +73,40 @@ func CountConsumers(flagshipsDir string, infraNames []string) (Consumers, error)
 	return c, nil
 }
 
+// anchorParents are the directory names whose *immediate children* may
+// legitimately be infra-component dirs, per the documented consumption
+// patterns:
+//
+//	<flagship>/internal/<infra>/
+//	<flagship>/src/<infra>/
+//	<flagship>/pkg/<infra>/
+//	<flagship>/<dialect>/<infra>/            (snake-cased / kotlin pattern)
+//	<flagship>/<dialect>/internal/<infra>/   (still parented by internal)
+//
+// Requiring a hit to be parented by one of these stops generic
+// directory names that happen to collide with an infra-component name
+// (schema / echo / oracle / lore — common as GraphQL-schema, web-
+// framework, db-connector, or content dirs) from being mis-counted as
+// real infra consumption. A bare `<flagship>/<dialect>/graphql/schema`
+// is no longer a "schema consumer"; `<flagship>/internal/schema` still
+// is.
+var anchorParents = map[string]bool{
+	"internal": true,
+	"src":      true,
+	"pkg":      true,
+	// language/dialect subdirs — the snake-cased pattern parents the
+	// infra dir directly by the dialect name.
+	"go": true, "rust": true, "python": true, "py": true,
+	"kotlin": true, "swift": true, "java": true, "scala": true,
+	"typescript": true, "ts": true, "javascript": true, "js": true,
+	"node": true, "crystal": true, "elixir": true, "c": true,
+	"cpp": true, "ruby": true, "rb": true, "csharp": true, "cs": true,
+	"zig": true, "dart": true, "php": true,
+}
+
 // scanFlagship walks a single flagship root to a bounded depth
-// looking for directories named after a known infra component.
+// looking for directories named after a known infra component whose
+// parent dir is an anchor (see anchorParents).
 func scanFlagship(root string, known map[string]bool) map[string]bool {
 	hits := map[string]bool{}
 	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -93,7 +125,7 @@ func scanFlagship(root string, known map[string]bool) map[string]bool {
 		if depth > 4 {
 			return filepath.SkipDir
 		}
-		if known[name] {
+		if known[name] && anchorParents[filepath.Base(filepath.Dir(p))] {
 			hits[name] = true
 		}
 		return nil
