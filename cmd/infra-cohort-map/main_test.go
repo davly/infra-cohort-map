@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,36 @@ import (
 
 	"github.com/davly/infra-cohort-map/internal/scanner"
 )
+
+// update regenerates the golden files: `go test ./cmd/... -update`.
+var update = flag.Bool("update", false, "update golden output files in testdata/")
+
+// normEOL strips CR so golden comparison is line-ending agnostic (this
+// box checks out .go/testdata with CRLF; generated output is always LF).
+func normEOL(b []byte) []byte { return bytes.ReplaceAll(b, []byte("\r\n"), []byte("\n")) }
+
+// checkGolden compares got against testdata/<name>, modulo line endings.
+// With -update it (re)writes the golden file instead.
+func checkGolden(t *testing.T, name string, got []byte) {
+	t.Helper()
+	path := filepath.Join("testdata", name)
+	if *update {
+		if err := os.MkdirAll("testdata", 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, got, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read golden %s (run `go test ./cmd/... -update` to create): %v", name, err)
+	}
+	if !bytes.Equal(normEOL(got), normEOL(want)) {
+		t.Fatalf("golden %s mismatch (run `go test ./cmd/... -update` to refresh).\n--- got (%d bytes) ---\n%s", name, len(got), got)
+	}
+}
 
 // mustWrite creates dir and writes name with body, failing the test on error.
 func mustWrite(t *testing.T, dir, name, body string) {
@@ -193,5 +224,70 @@ func TestRun_RenderJSONFormat(t *testing.T) {
 	var probe map[string]any
 	if err := json.Unmarshal(out.Bytes(), &probe); err != nil {
 		t.Fatalf("render --format=json did not emit valid JSON: %v", err)
+	}
+}
+
+// --- Wave-2 golden-output tests (#24) ---------------------------------
+//
+// These run the full CLI pipeline (scan + render) over the deterministic
+// scaffoldTree and compare to checked-in golden files. The output is
+// machine-independent because --checkout-root makes paths relative and
+// --no-scanned-at drops the timestamp. Each test also asserts the output
+// is byte-identical across runs so a future non-determinism regression
+// fails even before the golden diverges.
+
+func TestGolden_ScanYAML(t *testing.T) {
+	_, common := scaffoldTree(t)
+	args := append([]string{"scan", "--format=yaml", "--no-scanned-at"}, common...)
+
+	var out, errb bytes.Buffer
+	if code := run(args, &out, &errb); code != exitOK {
+		t.Fatalf("scan yaml: exit %d stderr=%q", code, errb.String())
+	}
+	checkGolden(t, "scan.yaml", out.Bytes())
+
+	var out2 bytes.Buffer
+	run(args, &out2, &errb)
+	if !bytes.Equal(out.Bytes(), out2.Bytes()) {
+		t.Fatal("scan YAML output not byte-identical across runs")
+	}
+}
+
+func TestGolden_ScanJSON(t *testing.T) {
+	_, common := scaffoldTree(t)
+	args := append([]string{"scan", "--format=json", "--no-scanned-at"}, common...)
+
+	var out, errb bytes.Buffer
+	if code := run(args, &out, &errb); code != exitOK {
+		t.Fatalf("scan json: exit %d stderr=%q", code, errb.String())
+	}
+	checkGolden(t, "scan.json", out.Bytes())
+
+	var out2 bytes.Buffer
+	run(args, &out2, &errb)
+	if !bytes.Equal(out.Bytes(), out2.Bytes()) {
+		t.Fatal("scan JSON output not byte-identical across runs")
+	}
+}
+
+func TestGolden_RenderSVG(t *testing.T) {
+	_, common := scaffoldTree(t)
+	args := append([]string{
+		"render", "--out=-", "--format=svg",
+		"--title=Golden Map", "--subtitle=deterministic fixture",
+		"--snapshot-date=2026-01-01", "--width=1200", "--height=800",
+		"--no-scanned-at",
+	}, common...)
+
+	var out, errb bytes.Buffer
+	if code := run(args, &out, &errb); code != exitOK {
+		t.Fatalf("render svg: exit %d stderr=%q", code, errb.String())
+	}
+	checkGolden(t, "render.svg", out.Bytes())
+
+	var out2 bytes.Buffer
+	run(args, &out2, &errb)
+	if !bytes.Equal(out.Bytes(), out2.Bytes()) {
+		t.Fatal("render SVG output not byte-identical across runs")
 	}
 }

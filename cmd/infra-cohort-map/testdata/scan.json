@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "generated_at": "",
+  "kat1_canonical_hex": "239a7d0d3f1bbe3a98aede01e2ad818c2db60b7177c02e2f015035b2b5b7dbca",
+  "components": [
+    {
+      "name": "causal",
+      "layer": "engine",
+      "path": "engines/causal",
+      "substrate": "go",
+      "go_module": "example.com/causal",
+      "package_status": {
+        "firewall": false,
+        "honest": false,
+        "legal": false,
+        "manifest": false,
+        "mirrormark": false
+      },
+      "cohort_count": 0,
+      "load_bearing": false,
+      "kat1_pinned": false,
+      "consumer_count": 0,
+      "notes": [
+        "no R174 cohort packages present"
+      ]
+    },
+    {
+      "name": "aicore",
+      "layer": "foundation",
+      "path": "foundation/aicore",
+      "substrate": "go",
+      "go_module": "example.com/aicore",
+      "package_status": {
+        "firewall": false,
+        "honest": false,
+        "legal": false,
+        "manifest": false,
+        "mirrormark": false
+      },
+      "cohort_count": 0,
+      "load_bearing": false,
+      "kat1_pinned": false,
+      "consumer_count": 0
+    },
+    {
+      "name": "codex",
+      "layer": "infrastructure",
+      "path": "infrastructure/codex",
+      "substrate": "go",
+      "go_module": "example.com/codex",
+      "package_status": {
+        "firewall": false,
+        "honest": false,
+        "legal": false,
+        "manifest": false,
+        "mirrormark": false
+      },
+      "cohort_count": 0,
+      "load_bearing": false,
+      "kat1_pinned": false,
+      "consumer_count": 0,
+      "notes": [
+        "no R174 cohort packages present"
+      ]
+    },
+    {
+      "name": "recall",
+      "layer": "infrastructure",
+      "path": "infrastructure/recall",
+      "substrate": "go",
+      "go_module": "example.com/recall",
+      "package_status": {
+        "firewall": true,
+        "honest": true,
+        "legal": true,
+        "manifest": true,
+        "mirrormark": true
+      },
+      "cohort_count": 5,
+      "load_bearing": true,
+      "kat1_pinned": true,
+      "consumer_count": 2,
+      "consumers": [
+        "academy",
+        "arbiter"
+      ]
+    }
+  ]
+}
