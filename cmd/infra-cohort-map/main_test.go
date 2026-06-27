@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -125,5 +126,72 @@ func TestRun_ScanEmitsCheckoutRelativePaths(t *testing.T) {
 	// No absolute drive-letter path should leak into the snapshot.
 	if strings.Contains(s, `path: "C:/`) || strings.Contains(s, `:\`) {
 		t.Errorf("absolute path leaked into output:\n%s", s)
+	}
+}
+
+func TestRun_ScanJSONValidDeterministicAndRelative(t *testing.T) {
+	_, common := scaffoldTree(t)
+	var out, errb bytes.Buffer
+	if code := run(append([]string{"scan", "--format=json", "--no-scanned-at"}, common...), &out, &errb); code != exitOK {
+		t.Fatalf("scan json: exit %d stderr=%q", code, errb.String())
+	}
+
+	var doc struct {
+		SchemaVersion int `json:"schema_version"`
+		Components    []struct {
+			Name          string          `json:"name"`
+			Path          string          `json:"path"`
+			PackageStatus map[string]bool `json:"package_status"`
+			ConsumerCount int             `json:"consumer_count"`
+			Consumers     []string        `json:"consumers"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &doc); err != nil {
+		t.Fatalf("output is not valid JSON: %v\n%s", err, out.String())
+	}
+	if doc.SchemaVersion != 1 {
+		t.Errorf("schema_version: got %d want 1", doc.SchemaVersion)
+	}
+	if len(doc.Components) != 4 {
+		t.Fatalf("components: got %d want 4", len(doc.Components))
+	}
+	var sawRecall bool
+	for _, c := range doc.Components {
+		if c.Name == "recall" {
+			sawRecall = true
+			if c.ConsumerCount != 2 {
+				t.Errorf("recall consumer_count: got %d want 2", c.ConsumerCount)
+			}
+			if c.Path != "infrastructure/recall" {
+				t.Errorf("recall path: got %q want infrastructure/recall", c.Path)
+			}
+			if len(c.PackageStatus) != 5 {
+				t.Errorf("recall package_status: got %d keys want 5", len(c.PackageStatus))
+			}
+		}
+	}
+	if !sawRecall {
+		t.Error("recall missing from JSON components")
+	}
+
+	// Deterministic: byte-identical across runs.
+	var out2 bytes.Buffer
+	if code := run(append([]string{"scan", "--format=json", "--no-scanned-at"}, common...), &out2, &errb); code != exitOK {
+		t.Fatalf("scan json (2nd): exit %d", code)
+	}
+	if !bytes.Equal(out.Bytes(), out2.Bytes()) {
+		t.Error("JSON output not byte-identical across runs")
+	}
+}
+
+func TestRun_RenderJSONFormat(t *testing.T) {
+	_, common := scaffoldTree(t)
+	var out, errb bytes.Buffer
+	if code := run(append([]string{"render", "--out=-", "--format=json", "--no-scanned-at"}, common...), &out, &errb); code != exitOK {
+		t.Fatalf("render json: exit %d stderr=%q", code, errb.String())
+	}
+	var probe map[string]any
+	if err := json.Unmarshal(out.Bytes(), &probe); err != nil {
+		t.Fatalf("render --format=json did not emit valid JSON: %v", err)
 	}
 }

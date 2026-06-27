@@ -35,11 +35,11 @@ type Options struct {
 	Width  int
 	Height int
 
-	Title       string
-	Subtitle    string
-	Snapshot    string // human date stamp shown in the title bar
-	Projection  string // "current" or "projected" — banner stamp
-	Provenance  string // free-form provenance footer line
+	Title      string
+	Subtitle   string
+	Snapshot   string // human date stamp shown in the title bar
+	Projection string // "current" or "projected" — banner stamp
+	Provenance string // free-form provenance footer line
 }
 
 // Defaults applies zero-value defaults.
@@ -93,10 +93,9 @@ func Render(snap scanner.Snapshot, consumers relate.Consumers, opts Options) []b
 	for li, layer := range layerOrder {
 		comps := groups[layer]
 		laneY := laneTop + li*laneHeight
-		laneMidY := laneY + laneHeight/2
 		laneLabel(&sb, layer, laneY, laneHeight, o.Width)
 
-		// Layout: evenly spread across width minus 200px lane label band.
+		// Layout: a grid inside the width minus the 200px lane label band.
 		bandLeft := 200
 		bandRight := o.Width - 40
 		bandW := bandRight - bandLeft
@@ -104,15 +103,14 @@ func Render(snap scanner.Snapshot, consumers relate.Consumers, opts Options) []b
 		if n == 0 {
 			continue
 		}
-		step := bandW
-		if n > 1 {
-			step = bandW / n
-		}
+		cells := layoutLane(n, bandLeft, bandW, laneY, laneHeight)
 		for ci, c := range comps {
-			cx := bandLeft + ci*step + step/2
-			cy := laneMidY
-			r := nodeRadius(len(consumers[c.Name]))
-			positions[c.Name] = pos{x: cx, y: cy, r: r, comp: c}
+			positions[c.Name] = pos{
+				x:    cells[ci].cx,
+				y:    cells[ci].cy,
+				r:    nodeRadius(len(consumers[c.Name])),
+				comp: c,
+			}
 		}
 	}
 
@@ -138,6 +136,46 @@ func Render(snap scanner.Snapshot, consumers relate.Consumers, opts Options) []b
 	footer(&sb, o)
 	closeSVG(&sb)
 	return []byte(sb.String())
+}
+
+// laneCell is a computed grid slot (node center) within a lane.
+type laneCell struct{ cx, cy int }
+
+// minCellW is the minimum horizontal room a node gets in a lane grid. It
+// comfortably exceeds the maximum node diameter (2*44=88) plus a label
+// gutter, so adjacent nodes in a row never collide.
+const minCellW = 120
+
+// layoutLane arranges n nodes into a grid inside the lane so each node
+// gets at least minCellW horizontal room, wrapping into multiple rows
+// when a single row would pack them tighter than that. This stops the
+// dense ~36-node infrastructure lane from overlapping. When n fits in a
+// single row the result is one centered row identical to the legacy
+// even-spread layout (so small-lane output is byte-stable).
+func layoutLane(n, bandLeft, bandW, laneTop, laneHeight int) []laneCell {
+	if n <= 0 {
+		return nil
+	}
+	perRow := bandW / minCellW
+	if perRow < 1 {
+		perRow = 1
+	}
+	if perRow > n {
+		perRow = n
+	}
+	rows := (n + perRow - 1) / perRow
+	cellW := bandW / perRow
+	rowH := laneHeight / rows
+	cells := make([]laneCell, n)
+	for i := 0; i < n; i++ {
+		row := i / perRow
+		col := i % perRow
+		cells[i] = laneCell{
+			cx: bandLeft + col*cellW + cellW/2,
+			cy: laneTop + row*rowH + rowH/2,
+		}
+	}
+	return cells
 }
 
 func groupByLayer(comps []scanner.Component) map[scanner.Layer][]scanner.Component {

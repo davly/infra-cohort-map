@@ -17,6 +17,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -73,8 +74,8 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "infra-cohort-map "+version+" — render Limitless infrastructure cohort map")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Sub-commands:")
-	fmt.Fprintln(w, "  render   produce SVG (default) or YAML snapshot")
-	fmt.Fprintln(w, "  scan     emit YAML snapshot only (no render)")
+	fmt.Fprintln(w, "  render   produce SVG (default), YAML, or JSON snapshot")
+	fmt.Fprintln(w, "  scan     emit YAML or JSON snapshot only (no render)")
 	fmt.Fprintln(w, "  list     print consumer counts per infra to stdout")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Common flags (render):")
@@ -148,7 +149,7 @@ func cmdRender(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	common := registerCommon(fs)
 	outPath := fs.String("out", "infra_map.svg", "path to write SVG (- for stdout)")
-	format := fs.String("format", "svg", "svg | yaml")
+	format := fs.String("format", "svg", "svg | yaml | json")
 	width := fs.Int("width", 1800, "SVG width in px")
 	height := fs.Int("height", 1100, "SVG height in px")
 	title := fs.String("title", "Limitless Infrastructure Cohort Map", "title bar")
@@ -210,8 +211,15 @@ func cmdRender(args []string, stdout, stderr io.Writer) int {
 	case "yaml":
 		out := []byte(toYAML(snap, consumers, common.checkoutRoot))
 		return writeOut(*outPath, out, stdout, stderr)
+	case "json":
+		out, err := toJSON(snap, consumers, common.checkoutRoot)
+		if err != nil {
+			fmt.Fprintln(stderr, "render: json:", err)
+			return exitRender
+		}
+		return writeOut(*outPath, out, stdout, stderr)
 	default:
-		fmt.Fprintln(stderr, "render: --format must be svg|yaml")
+		fmt.Fprintln(stderr, "render: --format must be svg|yaml|json")
 		return exitUsage
 	}
 }
@@ -220,14 +228,16 @@ func cmdScan(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("scan", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	common := registerCommon(fs)
-	outPath := fs.String("out", "-", "path to write YAML (- for stdout)")
-	format := fs.String("format", "yaml", "yaml")
+	outPath := fs.String("out", "-", "path to write snapshot (- for stdout)")
+	format := fs.String("format", "yaml", "yaml | json")
 	noScannedAt := fs.Bool("no-scanned-at", false, "omit the generated_at timestamp (deterministic output)")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
-	if strings.ToLower(*format) != "yaml" {
-		fmt.Fprintln(stderr, "scan: only --format=yaml is supported")
+	switch strings.ToLower(*format) {
+	case "yaml", "json":
+	default:
+		fmt.Fprintln(stderr, "scan: --format must be yaml|json")
 		return exitUsage
 	}
 	snap, err := scanner.ScanAll(common.Roots())
@@ -244,6 +254,14 @@ func cmdScan(args []string, stdout, stderr io.Writer) int {
 		// surface the reason rather than silently reporting zeroes.
 		fmt.Fprintln(stderr, "scan: consumer count unavailable:", err)
 		consumers = relate.Consumers{}
+	}
+	if strings.ToLower(*format) == "json" {
+		out, err := toJSON(snap, consumers, common.checkoutRoot)
+		if err != nil {
+			fmt.Fprintln(stderr, "scan: json:", err)
+			return exitRender
+		}
+		return writeOut(*outPath, out, stdout, stderr)
 	}
 	out := []byte(toYAML(snap, consumers, common.checkoutRoot))
 	return writeOut(*outPath, out, stdout, stderr)
@@ -395,4 +413,67 @@ func yamlStr(s string) string {
 	// don't accidentally turn into bools / numerics / null.
 	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
 	return `"` + r.Replace(s) + `"`
+}
+
+// toJSON emits a deterministic JSON representation of the snapshot +
+// consumer map. Component order follows the sorted snapshot; map keys
+// (package_status) are sorted by encoding/json; consumer lists are
+// sorted; paths are checkout-relative — so the output is byte-stable for
+// the same input and machine-independent.
+func toJSON(snap scanner.Snapshot, cons relate.Consumers, pathRoot string) ([]byte, error) {
+	type comp struct {
+		Name          string          `json:"name"`
+		Layer         string          `json:"layer"`
+		Path          string          `json:"path"`
+		Substrate     string          `json:"substrate"`
+		GoModule      string          `json:"go_module,omitempty"`
+		PackageStatus map[string]bool `json:"package_status"`
+		CohortCount   int             `json:"cohort_count"`
+		LoadBearing   bool            `json:"load_bearing"`
+		KAT1Pinned    bool            `json:"kat1_pinned"`
+		ConsumerCount int             `json:"consumer_count"`
+		Consumers     []string        `json:"consumers,omitempty"`
+		InternalDeps  []string        `json:"internal_deps,omitempty"`
+		Notes         []string        `json:"notes,omitempty"`
+	}
+	type doc struct {
+		SchemaVersion    int    `json:"schema_version"`
+		GeneratedAt      string `json:"generated_at"`
+		KAT1CanonicalHex string `json:"kat1_canonical_hex"`
+		Components       []comp `json:"components"`
+	}
+	d := doc{
+		SchemaVersion:    1,
+		GeneratedAt:      snap.GeneratedAt,
+		KAT1CanonicalHex: scanner.KAT1HexCanonical,
+		Components:       make([]comp, 0, len(snap.Components)),
+	}
+	for _, c := range snap.Components {
+		ps := make(map[string]bool, len(scanner.CohortPackages))
+		for i, name := range scanner.CohortPackages {
+			ps[name] = c.PackageStatus[i]
+		}
+		cs := append([]string(nil), cons[c.Name]...)
+		sort.Strings(cs)
+		d.Components = append(d.Components, comp{
+			Name:          c.Name,
+			Layer:         string(c.Layer),
+			Path:          relativizePath(pathRoot, c.Path),
+			Substrate:     c.Substrate,
+			GoModule:      c.GoModule,
+			PackageStatus: ps,
+			CohortCount:   c.CohortCount,
+			LoadBearing:   c.LoadBearing,
+			KAT1Pinned:    c.KAT1Pinned,
+			ConsumerCount: len(cs),
+			Consumers:     cs,
+			InternalDeps:  c.InternalDeps,
+			Notes:         c.Notes,
+		})
+	}
+	b, err := json.MarshalIndent(d, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
 }

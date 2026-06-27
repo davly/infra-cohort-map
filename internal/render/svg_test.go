@@ -2,6 +2,7 @@ package render
 
 import (
 	"bytes"
+	"sort"
 	"strings"
 	"testing"
 
@@ -275,4 +276,83 @@ func max(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// TestLayoutLane_WrapsDenseLaneNoOverlap is the discriminating test for the
+// ~36-node lane overlap. The pre-fix layout placed every node on a single
+// row with step = bandW/n (≈43px for 36 nodes in a 1560px band) — far
+// below a node diameter, so nodes overlapped. After the fix the lane wraps
+// to multiple rows and every node in a row is at least minCellW apart.
+func TestLayoutLane_WrapsDenseLaneNoOverlap(t *testing.T) {
+	const bandLeft, bandW, laneTop, laneHeight = 200, 1560, 110, 300
+	cells := layoutLane(36, bandLeft, bandW, laneTop, laneHeight)
+	if len(cells) != 36 {
+		t.Fatalf("cells: got %d want 36", len(cells))
+	}
+	rows := map[int]bool{}
+	byRow := map[int][]int{}
+	for _, c := range cells {
+		rows[c.cy] = true
+		byRow[c.cy] = append(byRow[c.cy], c.cx)
+	}
+	if len(rows) < 2 {
+		t.Fatalf("expected the dense lane to wrap to multiple rows, got %d", len(rows))
+	}
+	for _, xs := range byRow {
+		sort.Ints(xs)
+		for i := 1; i < len(xs); i++ {
+			if gap := xs[i] - xs[i-1]; gap < minCellW {
+				t.Fatalf("adjacent nodes only %dpx apart (< minCellW=%d)", gap, minCellW)
+			}
+		}
+	}
+}
+
+// TestLayoutLane_SingleRowMatchesLegacyLayout proves a lane that fits in
+// one row is positioned exactly as the old even-spread layout, so small
+// lanes (and the determinism golden) are unaffected.
+func TestLayoutLane_SingleRowMatchesLegacyLayout(t *testing.T) {
+	const bandLeft, bandW, laneTop, laneHeight = 200, 1560, 110, 300
+	const n = 3
+	cells := layoutLane(n, bandLeft, bandW, laneTop, laneHeight)
+	midY := laneTop + laneHeight/2
+	step := bandW / n
+	for i, c := range cells {
+		if c.cy != midY {
+			t.Errorf("cy[%d]: got %d want %d (lane mid)", i, c.cy, midY)
+		}
+		if want := bandLeft + i*step + step/2; c.cx != want {
+			t.Errorf("cx[%d]: got %d want %d (legacy spread)", i, c.cx, want)
+		}
+	}
+}
+
+// TestRender_DenseInfraLaneStillDeterministic renders a 36-node infra lane
+// (the real-world shape) and confirms the multi-row layout keeps output
+// byte-identical across runs.
+func TestRender_DenseInfraLaneStillDeterministic(t *testing.T) {
+	var comps []scanner.Component
+	cons := relate.Consumers{}
+	for i := 0; i < 36; i++ {
+		name := "infra" + string(rune('a'+i/26)) + string(rune('a'+i%26))
+		comps = append(comps, scanner.Component{
+			Name:          name,
+			Layer:         scanner.LayerInfrastructure,
+			Substrate:     "go",
+			PackageStatus: [5]bool{true, false, true, false, true},
+			CohortCount:   3,
+		})
+		cons[name] = []string{"x", "y"}
+	}
+	snap := scanner.Snapshot{GeneratedAt: "2026-06-27T00:00:00Z", Components: comps}
+	opts := Options{Snapshot: "2026-06-27"}
+	first := Render(snap, cons, opts)
+	for i := 0; i < 10; i++ {
+		if !bytes.Equal(first, Render(snap, cons, opts)) {
+			t.Fatalf("dense-lane render not deterministic on run %d", i)
+		}
+	}
+	if !bytes.Contains(first, []byte("</svg>")) {
+		t.Fatal("dense-lane render not closed")
+	}
 }
