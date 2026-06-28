@@ -410,8 +410,20 @@ func toYAML(snap scanner.Snapshot, cons relate.Consumers, pathRoot string) strin
 
 func yamlStr(s string) string {
 	// Conservative quoting: always quote so future edits to the value
-	// don't accidentally turn into bools / numerics / null.
-	r := strings.NewReplacer(`\`, `\\`, `"`, `\"`)
+	// don't accidentally turn into bools / numerics / null. Control
+	// characters (newline / CR / tab) are escaped to their YAML
+	// double-quoted forms — toYAML emits one scalar per physical line, so
+	// a raw newline in a name/module/note would otherwise spill onto the
+	// next line and corrupt the document. \ and " are escaped first; the
+	// strings.Replacer scans left-to-right with no re-substitution, so the
+	// backslashes it introduces are not themselves re-escaped.
+	r := strings.NewReplacer(
+		`\`, `\\`,
+		`"`, `\"`,
+		"\n", `\n`,
+		"\r", `\r`,
+		"\t", `\t`,
+	)
 	return `"` + r.Replace(s) + `"`
 }
 

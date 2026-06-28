@@ -94,6 +94,54 @@ func scaffoldTree(t *testing.T) (root string, common []string) {
 	return root, common
 }
 
+// --- Wave-3 #icm-3: yamlStr control-char hardening ---------------------
+//
+// toYAML emits each scalar on a single physical line ("    name: " +
+// yamlStr(v) + "\n"). yamlStr must therefore never let a raw control
+// character (newline / CR / tab) survive into the quoted value: a raw
+// newline in a name/module/note would spill onto the next line and
+// corrupt the document structure. The escaped output must also remain
+// parseable and round-trip to the original. YAML double-quoted scalars
+// use JSON-compatible escapes (\n \r \t \" \\), so encoding/json is a
+// faithful, dependency-free parser for exactly this subset.
+func TestYamlStr_EscapesControlCharsAndRoundTrips(t *testing.T) {
+	cases := []string{
+		"plain",
+		"with\nnewline",
+		"with\rcarriage-return",
+		"with\ttab",
+		"quote\"inside",
+		`back\slash`,
+		"mixed\n\r\t\"\\end",
+		"trailing-newline\n",
+	}
+	for _, in := range cases {
+		got := yamlStr(in)
+
+		// 1. No raw control char may survive into a single-line scalar.
+		if strings.ContainsAny(got, "\n\r\t") {
+			t.Errorf("yamlStr(%q) leaked a raw control char into output: %q", in, got)
+		}
+
+		// 2. Output must stay on exactly one line.
+		if n := strings.Count(got, "\n"); n != 0 {
+			t.Errorf("yamlStr(%q) produced %d embedded newlines, want 0: %q", in, n, got)
+		}
+
+		// 3. The quoted scalar must be parseable and round-trip back to
+		//    the original (encoding/json parses the YAML double-quoted
+		//    escape subset faithfully).
+		var decoded string
+		if err := json.Unmarshal([]byte(got), &decoded); err != nil {
+			t.Errorf("yamlStr(%q) = %s is not parseable: %v", in, got, err)
+			continue
+		}
+		if decoded != in {
+			t.Errorf("round-trip mismatch: yamlStr(%q) decoded back to %q", in, decoded)
+		}
+	}
+}
+
 func TestRun_RenderRejectsBadDimensions(t *testing.T) {
 	_, common := scaffoldTree(t)
 	for _, dim := range []string{"--width=0", "--height=0", "--width=-1", "--height=-5", "--width=200000", "--height=200000"} {
