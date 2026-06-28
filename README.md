@@ -21,7 +21,8 @@ maps answer different questions:
 
 ## CLI
 
-Three sub-commands plus `help` / `--version`:
+Three sub-commands plus the meta flags `-h`/`--help` and
+`-version`/`--version`/`-v`:
 
 | Sub-command | Purpose                                              |
 |-------------|------------------------------------------------------|
@@ -38,10 +39,31 @@ infra-cohort-map scan   --format=json --out=snapshot.json
 infra-cohort-map scan   --format=yaml --no-scanned-at      # deterministic
 infra-cohort-map scan   --require-5of5 --out=- >/dev/null  # CI exit gate
 infra-cohort-map list
-infra-cohort-map --version
+infra-cohort-map -version                                  # JSON contract
 ```
 
+### Version
+
+`-version` (or `--version` / `-v`) prints a single line of machine-readable
+JSON to stdout and exits `0`, carrying the binary version and the snapshot
+schema version a caller can pin against:
+
+```
+$ infra-cohort-map -version
+{"tool":"infra-cohort-map","version":"v0.1.0","schema_version":1}
+```
+
+`schema_version` is the version of the YAML/JSON snapshot contract (see
+[Snapshot schema](#snapshot-schema-yaml--json)); it is the same value stamped
+into every emitted snapshot, so the reported and emitted schema versions can
+never drift.
+
 ### Flags
+
+Machine-readable output is selected with `--format` (`svg`/`yaml`/`json`),
+**not** a `--json` boolean — unlike the sibling `tools/cohort-map`, which
+exposes a `--json` flag on its `verify`/`check` sub-commands. Here, pass
+`--format=json` to `render` or `scan`.
 
 `render` accepts:
 
