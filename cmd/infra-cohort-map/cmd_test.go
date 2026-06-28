@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/davly/infra-cohort-map/internal/scanner"
 )
 
 // --- Wave-2 cmd-layer tests (#icm-1) ----------------------------------
@@ -240,6 +242,202 @@ func TestRun_VersionExact(t *testing.T) {
 	}
 	if got, want := out.String(), version+"\n"; got != want {
 		t.Errorf("--version: got %q want %q", got, want)
+	}
+}
+
+// --- Wave-4 #icm-6: scan exit gates ----------------------------------
+//
+// scan --require-5of5 / --require-loadbearing turn the scan into a
+// deterministic CI exit gate: exit 9 (exitGate) unless every scanned
+// component clears the bar, exit 0 when all clear, and the snapshot is
+// always emitted first so a failing run still leaves a report behind.
+
+// scaffoldAllPass builds a layout whose only scanned component (recall) is
+// 5-of-5, load-bearing, and KAT-1 pinned, with engines/foundation roots
+// switched off — so every requested exit gate is satisfied. It returns the
+// common flag args pointing the CLI at the tree.
+func scaffoldAllPass(t *testing.T) (common []string) {
+	t.Helper()
+	root := t.TempDir()
+	infra := filepath.Join(root, "infrastructure")
+	flagships := filepath.Join(root, "flagships")
+
+	mustWrite(t, filepath.Join(infra, "recall"), "go.mod", "module example.com/recall\n\ngo 1.22\n")
+	for _, p := range scanner.CohortPackages {
+		mustWrite(t, filepath.Join(infra, "recall", "internal", p), p+".go", "package "+p+"\n")
+	}
+	mustWrite(t, filepath.Join(infra, "recall", "internal", "svc"), "svc.go",
+		"package svc\nimport \"example.com/recall/internal/mirrormark\"\nfunc Use() string { return mirrormark.Sign([32]byte{}, nil, nil) }\n")
+	mustWrite(t, filepath.Join(infra, "recall"), "kat1.go",
+		"package recall\nconst KAT1 = \""+scanner.KAT1HexCanonical+"\"\n")
+	mustWrite(t, filepath.Join(flagships, "academy", "internal", "recall"), "x.go", "package recall\n")
+
+	return []string{
+		"--infra-dir=" + infra,
+		"--engines-dir=",
+		"--foundation-dir=",
+		"--flagships-dir=" + flagships,
+		"--checkout-root=" + root,
+	}
+}
+
+// TestScanGate_FailExitCodes covers the failing gates against scaffoldTree,
+// where only recall (1 of 4 components) clears either bar — so each gate
+// must return exitGate and name exactly the three components below the bar.
+func TestScanGate_FailExitCodes(t *testing.T) {
+	cases := []struct {
+		name       string
+		flag       string
+		wantReason string
+	}{
+		{"require-5of5", "--require-5of5", "cohort 0/5"},
+		{"require-loadbearing", "--require-loadbearing", "not load-bearing"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, common := scaffoldTree(t)
+			args := append([]string{"scan", "--format=yaml", "--no-scanned-at", tc.flag}, common...)
+
+			var out, errb bytes.Buffer
+			if code := run(args, &out, &errb); code != exitGate {
+				t.Fatalf("%s: got exit %d want %d (gate); stderr=%q", tc.flag, code, exitGate, errb.String())
+			}
+			// The snapshot is emitted before the gate fails.
+			if !strings.Contains(out.String(), `name: "recall"`) {
+				t.Errorf("%s: snapshot not emitted on gate failure:\n%s", tc.flag, out.String())
+			}
+			// Diagnostic goes to stderr, names the three sub-bar components.
+			es := errb.String()
+			if !strings.Contains(es, "3 of 4 component(s) below the bar") {
+				t.Errorf("%s: stderr missing failure tally:\n%s", tc.flag, es)
+			}
+			for _, name := range []string{"engine/causal", "foundation/aicore", "infrastructure/codex"} {
+				if !strings.Contains(es, name+": "+tc.wantReason) {
+					t.Errorf("%s: stderr missing %q reason for %s:\n%s", tc.flag, tc.wantReason, name, es)
+				}
+			}
+			// recall clears the bar, so it must NOT be listed.
+			if strings.Contains(es, "infrastructure/recall:") {
+				t.Errorf("%s: recall clears the bar but was listed as failing:\n%s", tc.flag, es)
+			}
+		})
+	}
+}
+
+// TestScanGate_BothFlagsListBothReasons verifies that requesting both gates
+// reports both reasons, comma-joined, for a component below both bars.
+func TestScanGate_BothFlagsListBothReasons(t *testing.T) {
+	_, common := scaffoldTree(t)
+	args := append([]string{"scan", "--no-scanned-at", "--require-5of5", "--require-loadbearing"}, common...)
+
+	var out, errb bytes.Buffer
+	if code := run(args, &out, &errb); code != exitGate {
+		t.Fatalf("both gates: got exit %d want %d (gate); stderr=%q", code, exitGate, errb.String())
+	}
+	if !strings.Contains(errb.String(), "engine/causal: cohort 0/5, not load-bearing") {
+		t.Errorf("both gates: expected comma-joined reasons for causal:\n%s", errb.String())
+	}
+}
+
+// TestScanGate_PassExitCode covers the all-clear path: with a tree whose
+// every scanned component is 5-of-5 and load-bearing, both gates (alone and
+// together) must exit 0 and write nothing to stderr.
+func TestScanGate_PassExitCode(t *testing.T) {
+	for _, flags := range [][]string{
+		{"--require-5of5"},
+		{"--require-loadbearing"},
+		{"--require-5of5", "--require-loadbearing"},
+	} {
+		common := scaffoldAllPass(t)
+		args := append(append([]string{"scan", "--no-scanned-at"}, flags...), common...)
+
+		var out, errb bytes.Buffer
+		if code := run(args, &out, &errb); code != exitOK {
+			t.Errorf("%v: got exit %d want %d (OK); stderr=%q", flags, code, exitOK, errb.String())
+		}
+		if strings.Contains(errb.String(), "exit-gate") {
+			t.Errorf("%v: gate passed but emitted a diagnostic:\n%s", flags, errb.String())
+		}
+		if !strings.Contains(out.String(), `name: "recall"`) {
+			t.Errorf("%v: snapshot not emitted on gate pass:\n%s", flags, out.String())
+		}
+	}
+}
+
+// TestScanGate_NoFlagsUnchanged confirms the default (no gate flags) path is
+// untouched: plain scan exits 0 even though scaffoldTree has components
+// below the bar.
+func TestScanGate_NoFlagsUnchanged(t *testing.T) {
+	_, common := scaffoldTree(t)
+	var out, errb bytes.Buffer
+	if code := run(append([]string{"scan", "--no-scanned-at"}, common...), &out, &errb); code != exitOK {
+		t.Fatalf("plain scan (no gate): got exit %d want %d; stderr=%q", code, exitOK, errb.String())
+	}
+	if strings.Contains(errb.String(), "exit-gate") {
+		t.Errorf("plain scan emitted a gate diagnostic with no gate flag:\n%s", errb.String())
+	}
+}
+
+// TestScanGate_FailClosedOnEmptyScan covers the fail-closed branch: a gate
+// requested over zero scanned components must return exitGate rather than
+// vacuously passing (a mis-pointed root must not silently clear the bar).
+func TestScanGate_FailClosedOnEmptyScan(t *testing.T) {
+	root := t.TempDir()
+	common := []string{
+		"--infra-dir=",
+		"--engines-dir=",
+		"--foundation-dir=",
+		"--flagships-dir=" + filepath.Join(root, "flagships"),
+		"--checkout-root=" + root,
+	}
+	args := append([]string{"scan", "--no-scanned-at", "--require-5of5"}, common...)
+
+	var out, errb bytes.Buffer
+	if code := run(args, &out, &errb); code != exitGate {
+		t.Fatalf("empty scan + gate: got exit %d want %d (fail-closed); stderr=%q", code, exitGate, errb.String())
+	}
+	if !strings.Contains(errb.String(), "no components were scanned") {
+		t.Errorf("expected fail-closed message, got stderr:\n%s", errb.String())
+	}
+}
+
+// TestScanGate_StdoutByteIdenticalWithGate locks in that requesting a gate
+// does not change stdout (the snapshot) — the diagnostic is stderr-only —
+// so downstream consumers see the same bytes whether or not a gate is set.
+func TestScanGate_StdoutByteIdenticalWithGate(t *testing.T) {
+	_, common := scaffoldTree(t)
+	base := append([]string{"scan", "--format=json", "--no-scanned-at"}, common...)
+	gated := append([]string{"scan", "--format=json", "--no-scanned-at", "--require-5of5"}, common...)
+
+	var outBase, outGated, errb bytes.Buffer
+	if code := run(base, &outBase, &errb); code != exitOK {
+		t.Fatalf("base scan: exit %d", code)
+	}
+	if code := run(gated, &outGated, &errb); code != exitGate {
+		t.Fatalf("gated scan: got exit %d want %d (gate)", code, exitGate)
+	}
+	if !bytes.Equal(outBase.Bytes(), outGated.Bytes()) {
+		t.Errorf("stdout differs with --require-5of5:\n--- base ---\n%s\n--- gated ---\n%s", outBase.String(), outGated.String())
+	}
+}
+
+// TestScanGate_GateOverridesFileWriteSuccess verifies the gate exit code
+// wins even when the snapshot is written to a file (writeOut returns OK for
+// a successful file write; the gate must still surface exitGate).
+func TestScanGate_GateOverridesFileWriteSuccess(t *testing.T) {
+	_, common := scaffoldTree(t)
+	outFile := filepath.Join(t.TempDir(), "snap.yaml")
+	args := append([]string{"scan", "--no-scanned-at", "--require-5of5", "--out=" + outFile}, common...)
+
+	var out, errb bytes.Buffer
+	if code := run(args, &out, &errb); code != exitGate {
+		t.Fatalf("gate over file write: got exit %d want %d (gate); stderr=%q", code, exitGate, errb.String())
+	}
+	// The file must still have been written (report-then-fail).
+	if b, err := os.ReadFile(outFile); err != nil {
+		t.Fatalf("snapshot file not written before gate failure: %v", err)
+	} else if !strings.Contains(string(b), `name: "recall"`) {
+		t.Errorf("written snapshot missing recall:\n%s", b)
 	}
 }
 

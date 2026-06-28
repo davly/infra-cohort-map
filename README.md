@@ -36,6 +36,7 @@ infra-cohort-map render --out=infra_post.svg --projection=projected
 infra-cohort-map render --out=- --format=yaml > snapshot.yaml
 infra-cohort-map scan   --format=json --out=snapshot.json
 infra-cohort-map scan   --format=yaml --no-scanned-at      # deterministic
+infra-cohort-map scan   --require-5of5 --out=- >/dev/null  # CI exit gate
 infra-cohort-map list
 infra-cohort-map --version
 ```
@@ -57,7 +58,21 @@ infra-cohort-map --version
 | `--no-scanned-at`          | `false`                                | omit `generated_at` so YAML/JSON is byte-stable |
 
 `scan` accepts `--out` (default `-`), `--format=yaml|json` (default
-`yaml`), and `--no-scanned-at`. `list` takes no format/output flags.
+`yaml`), `--no-scanned-at`, and two optional exit-gate flags:
+
+| Flag                    | Meaning |
+|-------------------------|---------|
+| `--require-5of5`        | exit `9` unless **every** scanned component is 5-of-5 (`cohort_count == 5`) |
+| `--require-loadbearing` | exit `9` unless **every** scanned component is load-bearing |
+
+The gates make `scan` usable as a CI guard. The snapshot is still emitted
+(to `--out`) *before* the gate is checked, so a failing run leaves a full
+report behind; a per-component diagnostic naming each sub-bar component is
+written to **stderr only** (stdout stays byte-identical with or without a
+gate). Both gates may be combined (a component must clear both). They are
+**fail-closed**: if a gate is requested but the scan found zero components
+(e.g. a mis-pointed root) the run exits `9` rather than vacuously passing.
+`list` takes no format/output flags.
 
 All three commands share the scan-root overrides (defaults point at the
 canonical `C:/limitless` layout):
@@ -86,6 +101,7 @@ Stable across versions — regulator-side automation may branch on them
 | `6`  | usage error (bad sub-command / flag / dimension / format) |
 | `7`  | I/O error (scan, consumer-count, or write failed) |
 | `8`  | render error (YAML/JSON marshal failed) |
+| `9`  | exit-gate unmet (`scan --require-5of5` / `--require-loadbearing`) |
 
 ## Detection rules
 

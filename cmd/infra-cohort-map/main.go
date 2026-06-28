@@ -10,7 +10,14 @@
 //	infra-cohort-map render --out=infra_post.svg --projection=projected
 //	infra-cohort-map render --out=- --format=yaml > snapshot.yaml
 //	infra-cohort-map scan   --format=yaml --out=snapshot.yaml
+//	infra-cohort-map scan   --require-5of5 --out=- > /dev/null   # CI gate
 //	infra-cohort-map list
+//
+// The scan sub-command can also act as a deterministic CI exit gate:
+// --require-5of5 / --require-loadbearing make it exit non-zero (exitGate)
+// unless every scanned component clears the requested bar. The snapshot is
+// still emitted before the gate is evaluated, so a failing run leaves a
+// full report behind for triage.
 //
 // Exit codes mirror cohort-map / lore-mark-verify (zero-based, stable
 // across versions, regulator-side automation may branch on these).
@@ -39,6 +46,7 @@ const (
 	exitUsage  = 6
 	exitIO     = 7
 	exitRender = 8
+	exitGate   = 9 // scan exit-gate unmet (--require-5of5 / --require-loadbearing)
 )
 
 func main() {
@@ -90,8 +98,12 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  --checkout-root=<path>  emit component paths relative to this root")
 	fmt.Fprintln(w, "  --no-scanned-at         omit generated_at (deterministic YAML/JSON)")
 	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Exit-gate flags (scan):")
+	fmt.Fprintln(w, "  --require-5of5          exit 9 unless every component is 5-of-5")
+	fmt.Fprintln(w, "  --require-loadbearing   exit 9 unless every component is load-bearing")
+	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Exit codes:")
-	fmt.Fprintln(w, "  0 OK · 6 usage · 7 I/O · 8 render error")
+	fmt.Fprintln(w, "  0 OK · 6 usage · 7 I/O · 8 render error · 9 exit-gate unmet")
 }
 
 type commonFlags struct {
@@ -231,6 +243,8 @@ func cmdScan(args []string, stdout, stderr io.Writer) int {
 	outPath := fs.String("out", "-", "path to write snapshot (- for stdout)")
 	format := fs.String("format", "yaml", "yaml | json")
 	noScannedAt := fs.Bool("no-scanned-at", false, "omit the generated_at timestamp (deterministic output)")
+	require5of5 := fs.Bool("require-5of5", false, "exit non-zero unless every component has a 5-of-5 cohort")
+	requireLoadBearing := fs.Bool("require-loadbearing", false, "exit non-zero unless every component is load-bearing")
 	if err := fs.Parse(args); err != nil {
 		return exitUsage
 	}
@@ -255,16 +269,77 @@ func cmdScan(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "scan: consumer count unavailable:", err)
 		consumers = relate.Consumers{}
 	}
+
+	var out []byte
 	if strings.ToLower(*format) == "json" {
-		out, err := toJSON(snap, consumers, common.checkoutRoot)
+		out, err = toJSON(snap, consumers, common.checkoutRoot)
 		if err != nil {
 			fmt.Fprintln(stderr, "scan: json:", err)
 			return exitRender
 		}
-		return writeOut(*outPath, out, stdout, stderr)
+	} else {
+		out = []byte(toYAML(snap, consumers, common.checkoutRoot))
 	}
-	out := []byte(toYAML(snap, consumers, common.checkoutRoot))
-	return writeOut(*outPath, out, stdout, stderr)
+
+	// Always emit the snapshot first so a gate failure still leaves a full
+	// report behind. The gate is evaluated only after a clean write.
+	if code := writeOut(*outPath, out, stdout, stderr); code != exitOK {
+		return code
+	}
+	return scanGate(snap, *require5of5, *requireLoadBearing, stderr)
+}
+
+// scanGate evaluates the optional --require-5of5 / --require-loadbearing
+// exit gates against the scanned snapshot. It returns exitOK when no gate
+// is requested or every component clears the requested bar(s); otherwise it
+// writes a deterministic per-component diagnostic to stderr and returns
+// exitGate.
+//
+// The diagnostic follows the already-sorted snapshot order (Layer, Name)
+// so it is byte-stable for the same filesystem. It is written to stderr,
+// never stdout, so the emitted snapshot stays byte-identical whether or not
+// a gate is requested.
+//
+// Fail-closed: when a gate is requested but the scan found zero components
+// (e.g. roots mis-pointed) the bar cannot be vouched for, so the gate fails
+// rather than vacuously passing.
+func scanGate(snap scanner.Snapshot, require5of5, requireLoadBearing bool, stderr io.Writer) int {
+	if !require5of5 && !requireLoadBearing {
+		return exitOK
+	}
+	if len(snap.Components) == 0 {
+		fmt.Fprintln(stderr, "scan: exit-gate requested but no components were scanned (fail-closed)")
+		return exitGate
+	}
+	type failure struct {
+		name    string
+		reasons []string
+	}
+	var failures []failure
+	for _, c := range snap.Components {
+		var reasons []string
+		if require5of5 && c.CohortCount != 5 {
+			reasons = append(reasons, fmt.Sprintf("cohort %d/5", c.CohortCount))
+		}
+		if requireLoadBearing && !c.LoadBearing {
+			reasons = append(reasons, "not load-bearing")
+		}
+		if len(reasons) > 0 {
+			failures = append(failures, failure{
+				name:    string(c.Layer) + "/" + c.Name,
+				reasons: reasons,
+			})
+		}
+	}
+	if len(failures) == 0 {
+		return exitOK
+	}
+	fmt.Fprintf(stderr, "scan: exit-gate unmet — %d of %d component(s) below the bar:\n",
+		len(failures), len(snap.Components))
+	for _, f := range failures {
+		fmt.Fprintf(stderr, "  %s: %s\n", f.name, strings.Join(f.reasons, ", "))
+	}
+	return exitGate
 }
 
 func cmdList(args []string, stdout, stderr io.Writer) int {
