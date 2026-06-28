@@ -12,6 +12,7 @@
 //	infra-cohort-map scan   --format=yaml --out=snapshot.yaml
 //	infra-cohort-map scan   --require-5of5 --out=- > /dev/null   # CI gate
 //	infra-cohort-map list
+//	infra-cohort-map -version   # {tool,version,schema_version} JSON
 //
 // The scan sub-command can also act as a deterministic CI exit gate:
 // --require-5of5 / --require-loadbearing make it exit non-zero (exitGate)
@@ -39,7 +40,17 @@ import (
 	"github.com/davly/infra-cohort-map/internal/scanner"
 )
 
-const version = "v0.1.0"
+// version is the tool's release version and schemaVersion is the version of
+// the YAML/JSON snapshot contract it emits. Both are defined INLINE here (no
+// shared version library) so the gate stays zero-dep and self-contained, and
+// a caller can pin both the binary and the data contract it speaks. The
+// schemaVersion constant is the single source of truth — it is stamped into
+// the snapshot (toYAML/toJSON) and surfaced by -version, so the two can never
+// drift apart.
+const (
+	version       = "v0.1.0"
+	schemaVersion = 1
+)
 
 const (
 	exitOK     = 0
@@ -68,14 +79,38 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "-h", "--help", "help":
 		printUsage(stdout)
 		return exitOK
-	case "--version":
-		fmt.Fprintln(stdout, version)
-		return exitOK
+	case "-version", "--version", "-v":
+		return printVersion(stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "infra-cohort-map: unknown sub-command %q\n\n", args[0])
 		printUsage(stderr)
 		return exitUsage
 	}
+}
+
+// versionInfo is the machine-readable -version / --version payload. A caller
+// can pin both the binary (version) and the snapshot data contract
+// (schema_version) it speaks. Field order is fixed by the struct, so the JSON
+// is deterministic.
+type versionInfo struct {
+	Tool          string `json:"tool"`
+	Version       string `json:"version"`
+	SchemaVersion int    `json:"schema_version"`
+}
+
+// printVersion emits the machine-readable version contract as a single line of
+// JSON to stdout and returns exitOK. It is the response to -version / --version.
+func printVersion(stdout, stderr io.Writer) int {
+	enc := json.NewEncoder(stdout)
+	if err := enc.Encode(versionInfo{
+		Tool:          "infra-cohort-map",
+		Version:       version,
+		SchemaVersion: schemaVersion,
+	}); err != nil {
+		fmt.Fprintln(stderr, "version:", err)
+		return exitIO
+	}
+	return exitOK
 }
 
 func printUsage(w io.Writer) {
@@ -85,6 +120,10 @@ func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "  render   produce SVG (default), YAML, or JSON snapshot")
 	fmt.Fprintln(w, "  scan     emit YAML or JSON snapshot only (no render)")
 	fmt.Fprintln(w, "  list     print consumer counts per infra to stdout")
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, "Meta:")
+	fmt.Fprintln(w, "  -h, --help        print this help")
+	fmt.Fprintln(w, "  -version          print {tool,version,schema_version} as JSON, exit 0")
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Common flags (render):")
 	fmt.Fprintln(w, "  --out=<file>          output path ('-' for stdout)")
@@ -435,7 +474,7 @@ func toYAML(snap scanner.Snapshot, cons relate.Consumers, pathRoot string) strin
 	var sb strings.Builder
 	sb.WriteString("# infra-cohort-map snapshot — auto-generated\n")
 	sb.WriteString("# Do not edit by hand; regenerate with `infra-cohort-map scan`.\n")
-	sb.WriteString("schema_version: 1\n")
+	sb.WriteString(fmt.Sprintf("schema_version: %d\n", schemaVersion))
 	if snap.GeneratedAt == "" {
 		sb.WriteString("generated_at:\n")
 	} else {
@@ -530,7 +569,7 @@ func toJSON(snap scanner.Snapshot, cons relate.Consumers, pathRoot string) ([]by
 		Components       []comp `json:"components"`
 	}
 	d := doc{
-		SchemaVersion:    1,
+		SchemaVersion:    schemaVersion,
 		GeneratedAt:      snap.GeneratedAt,
 		KAT1CanonicalHex: scanner.KAT1HexCanonical,
 		Components:       make([]comp, 0, len(snap.Components)),

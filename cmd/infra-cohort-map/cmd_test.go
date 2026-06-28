@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -211,7 +212,9 @@ func TestRun_Dispatch(t *testing.T) {
 	}{
 		{"no-args", nil, exitUsage, "", "Sub-commands:"},
 		{"unknown", []string{"frobnicate"}, exitUsage, "", "unknown sub-command"},
-		{"version", []string{"--version"}, exitOK, version, ""},
+		{"version-long", []string{"--version"}, exitOK, version, ""},
+		{"version-short", []string{"-version"}, exitOK, version, ""},
+		{"version-v", []string{"-v"}, exitOK, version, ""},
 		{"help-word", []string{"help"}, exitOK, "Sub-commands:", ""},
 		{"help-short", []string{"-h"}, exitOK, "Sub-commands:", ""},
 		{"help-long", []string{"--help"}, exitOK, "Exit codes:", ""},
@@ -233,15 +236,49 @@ func TestRun_Dispatch(t *testing.T) {
 	}
 }
 
-// TestRun_VersionExact pins the --version output to exactly the version
-// constant plus a newline (regulator automation may parse it).
-func TestRun_VersionExact(t *testing.T) {
-	var out, errb bytes.Buffer
-	if code := run([]string{"--version"}, &out, &errb); code != exitOK {
-		t.Fatalf("--version: exit %d", code)
+// TestRun_VersionContract pins the version output to the machine-readable JSON
+// contract (regulator automation parses it). Every spelling of the flag
+// (-version / --version / -v) must emit the identical, byte-stable payload
+// carrying the tool name, the binary version, and the snapshot schema_version
+// — which must equal the schemaVersion constant actually stamped into snapshots.
+func TestRun_VersionContract(t *testing.T) {
+	for _, flagSpelling := range []string{"--version", "-version", "-v"} {
+		t.Run(flagSpelling, func(t *testing.T) {
+			var out, errb bytes.Buffer
+			if code := run([]string{flagSpelling}, &out, &errb); code != exitOK {
+				t.Fatalf("%s: exit %d (stderr=%q)", flagSpelling, code, errb.String())
+			}
+			var got versionInfo
+			if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+				t.Fatalf("%s: output is not valid JSON: %v\noutput=%q", flagSpelling, err, out.String())
+			}
+			want := versionInfo{Tool: "infra-cohort-map", Version: version, SchemaVersion: schemaVersion}
+			if got != want {
+				t.Errorf("%s: got %+v want %+v", flagSpelling, got, want)
+			}
+			// Encoder emits exactly one line (compact JSON + trailing newline).
+			if n := strings.Count(out.String(), "\n"); n != 1 {
+				t.Errorf("%s: expected single-line JSON, got %d newlines in %q", flagSpelling, n, out.String())
+			}
+		})
 	}
-	if got, want := out.String(), version+"\n"; got != want {
-		t.Errorf("--version: got %q want %q", got, want)
+}
+
+// TestVersion_SchemaMatchesSnapshot guards the single-source-of-truth wiring:
+// the schema_version surfaced by -version must equal the schema_version
+// actually stamped into an emitted snapshot, so the two cannot drift.
+func TestVersion_SchemaMatchesSnapshot(t *testing.T) {
+	var out, errb bytes.Buffer
+	if code := run([]string{"-version"}, &out, &errb); code != exitOK {
+		t.Fatalf("-version: exit %d", code)
+	}
+	var vi versionInfo
+	if err := json.Unmarshal(out.Bytes(), &vi); err != nil {
+		t.Fatalf("-version: bad JSON: %v", err)
+	}
+	yaml := toYAML(scanner.Snapshot{}, nil, "")
+	if want := "schema_version: " + strconv.Itoa(vi.SchemaVersion); !strings.Contains(yaml, want) {
+		t.Errorf("YAML snapshot missing %q (version reports schema_version=%d):\n%s", want, vi.SchemaVersion, yaml)
 	}
 }
 
