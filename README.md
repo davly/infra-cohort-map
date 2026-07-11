@@ -134,7 +134,11 @@ For each `infrastructure/<infra>`, `engines/<engine>`, and
    `shard.yml` / `package.json`.
 2. **R174 cohort packages**: check for presence of all five —
    `mirrormark`, `honest`, `legal`, `manifest`, `firewall` — under
-   `internal/` or `pkg/`.
+   `internal/` or `pkg/`. Presence requires a non-test `.go` file:
+   empty placeholder dirs and test-only dirs count **absent**, but a
+   dir holding only `_test.go` files (echo's pure-test firewall
+   pattern) is surfaced as a `<pkg>: test-only` note so a 4-of-5 is
+   explainable.
 3. **Load-bearing wire-in**: non-test code calls `mirrormark.Sign(`,
    `marker.Sign(`, or `MirrorMark.Sign(`.
 4. **KAT-1 byte-identity**: any file under the infra root pins the

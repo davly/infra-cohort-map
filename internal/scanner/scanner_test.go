@@ -275,6 +275,104 @@ func TestScanOne_NoSelfDependencyEdge(t *testing.T) {
 	}
 }
 
+// TestScanOne_TestOnlyCohortPackageNoted covers the echo firewall
+// pattern: a cohort package dir holding ONLY _test.go files (R145.C
+// pins carried in a pure-test package). The counting convention is
+// unchanged — it still counts absent — but scanOne must emit a
+// "<pkg>: test-only" note so the 4-of-5 is explainable.
+func TestScanOne_TestOnlyCohortPackageNoted(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "echoish")
+	writeFile(t, root, "go.mod", "module example.com/echoish\n\ngo 1.22\n")
+	for _, p := range []string{"mirrormark", "honest", "legal", "manifest"} {
+		writeFile(t, filepath.Join(root, "internal", p), "marker.go", "package "+p+"\n")
+	}
+	writeFile(t, filepath.Join(root, "internal", "firewall"), "firewall_test.go",
+		"package firewall\n")
+
+	c := scanOne("echoish", root, LayerEngine)
+
+	// Semantics unchanged: test-only still counts absent.
+	if c.CohortCount != 4 {
+		t.Fatalf("cohort count: got %d want 4 (test-only must stay absent)", c.CohortCount)
+	}
+	if c.PackageStatus[4] { // firewall is CohortPackages[4]
+		t.Fatal("firewall package_status: got true, test-only must count absent")
+	}
+	// But the note makes the 4-of-5 explainable.
+	var sawNote bool
+	for _, n := range c.Notes {
+		if n == "firewall: test-only" {
+			sawNote = true
+			break
+		}
+	}
+	if !sawNote {
+		t.Fatalf("expected \"firewall: test-only\" note, got %v", c.Notes)
+	}
+}
+
+// TestScanOne_EmptyPlaceholderGetsNoTestOnlyNote pins the boundary: an
+// empty placeholder dir (codex pattern) is absent-and-silent — the
+// test-only note is reserved for dirs that actually hold _test.go files.
+func TestScanOne_EmptyPlaceholderGetsNoTestOnlyNote(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "codexish")
+	writeFile(t, root, "go.mod", "module example.com/codexish\n\ngo 1.22\n")
+	if err := os.MkdirAll(filepath.Join(root, "internal", "firewall"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c := scanOne("codexish", root, LayerInfrastructure)
+	for _, n := range c.Notes {
+		if strings.Contains(n, "test-only") {
+			t.Fatalf("empty placeholder must not be noted test-only: %v", c.Notes)
+		}
+	}
+}
+
+// TestScanOne_PresentPackageGetsNoTestOnlyNote pins that a package
+// present via a non-test file gets no note even when tests sit next to
+// it (the normal shape).
+func TestScanOne_PresentPackageGetsNoTestOnlyNote(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "normal")
+	writeFile(t, root, "go.mod", "module example.com/normal\n\ngo 1.22\n")
+	writeFile(t, filepath.Join(root, "internal", "firewall"), "firewall.go", "package firewall\n")
+	writeFile(t, filepath.Join(root, "internal", "firewall"), "firewall_test.go", "package firewall\n")
+	c := scanOne("normal", root, LayerInfrastructure)
+	if !c.PackageStatus[4] {
+		t.Fatal("firewall with a non-test file must count present")
+	}
+	for _, n := range c.Notes {
+		if strings.Contains(n, "test-only") {
+			t.Fatalf("present package must not be noted test-only: %v", c.Notes)
+		}
+	}
+}
+
+// TestScanOne_TestOnlyNotesDeterministicOrder pins that multiple
+// test-only packages are noted in CohortPackages order.
+func TestScanOne_TestOnlyNotesDeterministicOrder(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "multi")
+	writeFile(t, root, "go.mod", "module example.com/multi\n\ngo 1.22\n")
+	// firewall (idx 4) and honest (idx 1) test-only, others absent.
+	writeFile(t, filepath.Join(root, "internal", "firewall"), "x_test.go", "package firewall\n")
+	writeFile(t, filepath.Join(root, "internal", "honest"), "x_test.go", "package honest\n")
+	c := scanOne("multi", root, LayerInfrastructure)
+	var got []string
+	for _, n := range c.Notes {
+		if strings.HasSuffix(n, ": test-only") {
+			got = append(got, n)
+		}
+	}
+	want := []string{"honest: test-only", "firewall: test-only"}
+	if len(got) != len(want) {
+		t.Fatalf("test-only notes: got %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("test-only note order: got %v want %v", got, want)
+		}
+	}
+}
+
 func TestScanAll_SortsByLayerThenName(t *testing.T) {
 	tmp := t.TempDir()
 	infra := filepath.Join(tmp, "infrastructure")

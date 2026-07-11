@@ -155,6 +155,7 @@ func scanOne(name, path string, layer Layer) Component {
 	if c.CohortCount == 5 && !c.LoadBearing {
 		c.Notes = append(c.Notes, "5-of-5 present but not load-bearing")
 	}
+	c.Notes = append(c.Notes, testOnlyCohortNotes(path, c.PackageStatus)...)
 	return c
 }
 
@@ -273,18 +274,13 @@ func hasHeaderOrSource(path string, exts []string) bool {
 //	<root>/pkg/<root-name>/<pkg>/ (rare nested layout)
 //
 // "Presence" means a non-placeholder Go source file exists inside the
-// directory — empty placeholder dirs (codex pattern) do NOT count.
+// directory — empty placeholder dirs (codex pattern) do NOT count, and
+// neither does a dir holding only _test.go files (the test-only form is
+// surfaced separately as a "<pkg>: test-only" note by scanOne).
 func detectCohortPackages(path string) ([5]bool, int) {
 	var status [5]bool
 	for i, pkg := range CohortPackages {
-		candidates := []string{
-			filepath.Join(path, "internal", pkg),
-			filepath.Join(path, "pkg", pkg),
-		}
-		// Foundation/aicore lays packages out at the root level
-		// (no internal/pkg prefix), so add a flat candidate.
-		candidates = append(candidates, filepath.Join(path, pkg))
-		for _, c := range candidates {
+		for _, c := range cohortCandidates(path, pkg) {
 			if dirHasNonTestGoFile(c) {
 				status[i] = true
 				break
@@ -298,6 +294,18 @@ func detectCohortPackages(path string) ([5]bool, int) {
 		}
 	}
 	return status, n
+}
+
+// cohortCandidates lists the conventional locations a cohort package
+// may live at under a component root. The flat <root>/<pkg> candidate
+// covers foundation/aicore, which lays packages out at the root level
+// (no internal/pkg prefix).
+func cohortCandidates(path, pkg string) []string {
+	return []string{
+		filepath.Join(path, "internal", pkg),
+		filepath.Join(path, "pkg", pkg),
+		filepath.Join(path, pkg),
+	}
 }
 
 // dirHasNonTestGoFile returns true if dir contains at least one .go
@@ -317,6 +325,50 @@ func dirHasNonTestGoFile(dir string) bool {
 		}
 	}
 	return false
+}
+
+// dirHasTestGoFile returns true if dir contains at least one _test.go
+// file (regardless of whether non-test files are present).
+func dirHasTestGoFile(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if strings.HasSuffix(e.Name(), "_test.go") {
+			return true
+		}
+	}
+	return false
+}
+
+// testOnlyCohortNotes returns a deterministic note per cohort package
+// that was counted ABSENT (per status) but whose conventional dirs
+// hold at least one _test.go file — i.e. the package exists in a
+// test-only form (echo's firewall pattern: R145.C pins carried in a
+// pure-test package).
+//
+// The counting convention is deliberately unchanged — a test-only
+// package still counts absent, matching dirHasNonTestGoFile — but the
+// note makes a 4-of-5 explainable instead of silently conflating
+// "test-only" with "missing".
+func testOnlyCohortNotes(path string, status [5]bool) []string {
+	var notes []string
+	for i, pkg := range CohortPackages {
+		if status[i] {
+			continue
+		}
+		for _, c := range cohortCandidates(path, pkg) {
+			if dirHasTestGoFile(c) {
+				notes = append(notes, pkg+": test-only")
+				break
+			}
+		}
+	}
+	return notes
 }
 
 // detectLoadBearing returns true when *any* non-test Go file under
