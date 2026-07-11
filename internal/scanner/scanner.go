@@ -148,7 +148,7 @@ func scanOne(name, path string, layer Layer) Component {
 	c.PackageStatus, c.CohortCount = detectCohortPackages(path)
 	c.LoadBearing = detectLoadBearing(path)
 	c.KAT1Pinned = detectKAT1Pin(path)
-	c.InternalDeps = detectInternalDeps(path)
+	c.InternalDeps = detectInternalDeps(path, name)
 	if c.CohortCount == 0 && layer != LayerFoundation {
 		c.Notes = append(c.Notes, "no R174 cohort packages present")
 	}
@@ -410,7 +410,12 @@ func detectKAT1Pin(path string) bool {
 // detectInternalDeps lists infra-component names referenced as
 // `internal/<name>` subdirs under path. This is how we surface
 // cross-infra fan-out (e.g. an engine depending on a service stub).
-func detectInternalDeps(path string) []string {
+//
+// selfName is the scanned component's own name: a component commonly
+// hosts an `internal/<own-name>` package for its local types (the
+// delve pattern — internal/delve holds delve's error/type defs), which
+// is NOT a dependency edge, so the component's own name is excluded.
+func detectInternalDeps(path, selfName string) []string {
 	internalDir := filepath.Join(path, "internal")
 	entries, err := os.ReadDir(internalDir)
 	if err != nil {
@@ -423,6 +428,9 @@ func detectInternalDeps(path string) []string {
 	var deps []string
 	for _, e := range entries {
 		if !e.IsDir() {
+			continue
+		}
+		if e.Name() == selfName {
 			continue
 		}
 		if known[e.Name()] {

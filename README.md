@@ -171,7 +171,7 @@ Each component:
 | `kat1_pinned`     | bool           | KAT-1 hex found under the root |
 | `consumer_count`  | int            | number of consuming flagships |
 | `consumers`       | []string       | sorted flagship names (omitted if none) |
-| `internal_deps`   | []string       | cross-infra `internal/<other>` deps (omitted if none) |
+| `internal_deps`   | []string       | cross-infra `internal/<other>` deps (omitted if none); the component's own name is excluded — an `internal/<own-name>` local-types package (the delve pattern) is not a dependency edge |
 | `notes`           | []string       | scanner annotations (omitted if none) |
 
 The YAML form is a strict, hand-rolled subset (no `gopkg.in/yaml.v3`

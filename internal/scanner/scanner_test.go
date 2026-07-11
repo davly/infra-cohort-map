@@ -233,12 +233,45 @@ func TestDetectInternalDeps_LooksUpKnownNames(t *testing.T) {
 	for _, n := range []string{"recall", "codex", "totally-unknown"} {
 		writeFile(t, filepath.Join(root, "internal", n), "x.go", "package "+n+"\n")
 	}
-	deps := detectInternalDeps(root)
+	deps := detectInternalDeps(root, "downstream")
 	if len(deps) != 2 {
 		t.Fatalf("deps: got %v want [codex recall]", deps)
 	}
 	if deps[0] != "codex" || deps[1] != "recall" {
 		t.Fatalf("deps order: got %v want [codex recall]", deps)
+	}
+}
+
+func TestDetectInternalDeps_ExcludesSelfName(t *testing.T) {
+	// The delve pattern: a component named after a known infra name
+	// hosts an internal/<own-name> package for its local types. That
+	// dir must NOT surface as a self-dependency edge.
+	root := filepath.Join(t.TempDir(), "delve")
+	writeFile(t, root, "go.mod", "module example.com/delve\n\ngo 1.22\n")
+	for _, n := range []string{"delve", "conduit"} {
+		writeFile(t, filepath.Join(root, "internal", n), "x.go", "package "+n+"\n")
+	}
+	deps := detectInternalDeps(root, "delve")
+	if len(deps) != 1 || deps[0] != "conduit" {
+		t.Fatalf("self-edge not excluded: got %v want [conduit]", deps)
+	}
+}
+
+func TestScanOne_NoSelfDependencyEdge(t *testing.T) {
+	// End-to-end through scanOne: the component's own name must be
+	// filtered out of InternalDeps even when the dir exists.
+	root := filepath.Join(t.TempDir(), "lore")
+	writeFile(t, root, "go.mod", "module example.com/lore\n\ngo 1.22\n")
+	writeFile(t, filepath.Join(root, "internal", "lore"), "types.go", "package lore\n")
+	writeFile(t, filepath.Join(root, "internal", "recall"), "x.go", "package recall\n")
+	c := scanOne("lore", root, LayerInfrastructure)
+	for _, d := range c.InternalDeps {
+		if d == "lore" {
+			t.Fatalf("scanOne emitted a self-dependency edge: %v", c.InternalDeps)
+		}
+	}
+	if len(c.InternalDeps) != 1 || c.InternalDeps[0] != "recall" {
+		t.Fatalf("internal deps: got %v want [recall]", c.InternalDeps)
 	}
 }
 
