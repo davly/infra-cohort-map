@@ -190,6 +190,108 @@ func TestDefaultInfraNames_NonEmpty(t *testing.T) {
 	}
 }
 
+// mkDir creates an (empty) directory tree, failing the test on error.
+func mkDir(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+}
+
+func TestCountConsumers_EmptyPlaceholderDirNotCounted(t *testing.T) {
+	tmp := t.TempDir()
+	// An empty flagship dir named after an infra component under an
+	// anchor parent is a placeholder (codex pattern), not consumption —
+	// mirrors the scanner's cohort-package placeholder guard.
+	mkDir(t, filepath.Join(tmp, "alpha", "internal", "recall"))
+	c, err := CountConsumers(tmp, []string{"recall"})
+	if err != nil {
+		t.Fatalf("CountConsumers: %v", err)
+	}
+	if len(c["recall"]) != 0 {
+		t.Fatalf("empty placeholder dir counted as consumer: got %v want []", c["recall"])
+	}
+}
+
+func TestCountConsumers_NonSourceFilesOnlyNotCounted(t *testing.T) {
+	tmp := t.TempDir()
+	// Docs/fixtures alone are not consumption.
+	writeFile(t, filepath.Join(tmp, "alpha", "go", "lore"), "notes.txt", "not source\n")
+	c, err := CountConsumers(tmp, []string{"lore"})
+	if err != nil {
+		t.Fatalf("CountConsumers: %v", err)
+	}
+	if len(c["lore"]) != 0 {
+		t.Fatalf("doc-only dir counted as consumer: got %v want []", c["lore"])
+	}
+}
+
+func TestCountConsumers_TestOnlyFilesNotCounted(t *testing.T) {
+	tmp := t.TempDir()
+	writeFile(t, filepath.Join(tmp, "alpha", "internal", "recall"), "x_test.go", "package recall\n")
+	c, err := CountConsumers(tmp, []string{"recall"})
+	if err != nil {
+		t.Fatalf("CountConsumers: %v", err)
+	}
+	if len(c["recall"]) != 0 {
+		t.Fatalf("test-only dir counted as consumer: got %v want []", c["recall"])
+	}
+}
+
+func TestCountConsumers_NestedSourceFileStillCounts(t *testing.T) {
+	tmp := t.TempDir()
+	// The source file may live in a subpackage of the hit dir — the
+	// guard is recursive, only genuinely file-less trees are excluded.
+	writeFile(t, filepath.Join(tmp, "alpha", "internal", "recall", "sub"), "x.go", "package sub\n")
+	c, err := CountConsumers(tmp, []string{"recall"})
+	if err != nil {
+		t.Fatalf("CountConsumers: %v", err)
+	}
+	if len(c["recall"]) != 1 || c["recall"][0] != "alpha" {
+		t.Fatalf("nested source file: got %v want [alpha]", c["recall"])
+	}
+}
+
+func TestCountConsumers_NonGoSubstrateSourceCounts(t *testing.T) {
+	tmp := t.TempDir()
+	// Multi-substrate flagships stay counted: a Rust file under the
+	// src anchor is a source-backed hit.
+	writeFile(t, filepath.Join(tmp, "alpha", "src", "lore"), "y.rs", "pub fn y() {}\n")
+	c, err := CountConsumers(tmp, []string{"lore"})
+	if err != nil {
+		t.Fatalf("CountConsumers: %v", err)
+	}
+	if len(c["lore"]) != 1 || c["lore"][0] != "alpha" {
+		t.Fatalf("rust source hit: got %v want [alpha]", c["lore"])
+	}
+}
+
+func TestIsNonTestSourceFile(t *testing.T) {
+	cases := []struct {
+		name string
+		want bool
+	}{
+		{"x.go", true},
+		{"y.rs", true},
+		{"main.kt", true},
+		{"app.py", true},
+		{"x_test.go", false},
+		{"test_x.py", false},
+		{"x_spec.rb", false},
+		{"x.test.ts", false},
+		{"x.spec.js", false},
+		{"notes.txt", false},
+		{"README.md", false},
+		{"kat1.hex", false},
+		{"forge.graphql", false},
+	}
+	for _, tc := range cases {
+		if got := isNonTestSourceFile(tc.name); got != tc.want {
+			t.Errorf("isNonTestSourceFile(%q): got %v want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 func TestCountConsumers_EmptyDirReturnsEmptyMap(t *testing.T) {
 	tmp := t.TempDir()
 	c, err := CountConsumers(tmp, []string{"recall"})

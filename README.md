@@ -140,7 +140,11 @@ For each `infrastructure/<infra>`, `engines/<engine>`, and
 4. **KAT-1 byte-identity**: any file under the infra root pins the
    canonical KAT-1 hex `239a7d0d3f1bbe3a98aede01e2ad818c2db60b7177c02e2f015035b2b5b7dbca`.
 5. **Consumer flagships**: count of `flagships/<f>/internal/<infra>`
-   directories (or `flagships/<f>/<dialect>/<infra>` variants).
+   directories (or `flagships/<f>/<dialect>/<infra>` variants). The hit
+   directory must contain at least one non-test source file (any
+   substrate, anywhere under it) — empty placeholder dirs and dirs
+   holding only docs/fixtures/test files do **not** count, mirroring
+   the cohort-package placeholder guard in rule 2.
 
 ## SVG output
 

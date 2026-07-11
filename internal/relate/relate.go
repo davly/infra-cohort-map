@@ -13,6 +13,11 @@
 // (e.g. importing the package) catches more but is fragile across the
 // ~38 substrate languages in the L43 cohort — and the directory
 // signal is what the cohort review framework already documents.
+//
+// A hit directory must, however, contain at least one non-test source
+// file (any substrate, anywhere under it) — an empty placeholder dir
+// (codex pattern) is not consumption. This mirrors the scanner's own
+// cohort-package placeholder guard (scanner.dirHasNonTestGoFile).
 package relate
 
 import (
@@ -106,7 +111,8 @@ var anchorParents = map[string]bool{
 
 // scanFlagship walks a single flagship root to a bounded depth
 // looking for directories named after a known infra component whose
-// parent dir is an anchor (see anchorParents).
+// parent dir is an anchor (see anchorParents) and which contain at
+// least one non-test source file (empty placeholder dirs don't count).
 func scanFlagship(root string, known map[string]bool) map[string]bool {
 	hits := map[string]bool{}
 	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -125,12 +131,81 @@ func scanFlagship(root string, known map[string]bool) map[string]bool {
 		if depth > 4 {
 			return filepath.SkipDir
 		}
-		if known[name] && anchorParents[filepath.Base(filepath.Dir(p))] {
+		if known[name] && anchorParents[filepath.Base(filepath.Dir(p))] && dirHasNonTestSourceFile(p) {
 			hits[name] = true
 		}
 		return nil
 	})
 	return hits
+}
+
+// sourceExts are the file extensions recognised as source code across
+// the cohort's substrate languages (mirrors the substrates the scanner
+// detects plus the dialect anchors above). A consumption hit must be
+// backed by at least one such file — docs, fixtures, or an empty
+// placeholder dir are not consumption.
+var sourceExts = map[string]bool{
+	".go": true, ".rs": true, ".py": true,
+	".kt": true, ".kts": true, ".swift": true,
+	".java": true, ".scala": true,
+	".ts": true, ".tsx": true, ".js": true, ".jsx": true,
+	".mjs": true, ".cjs": true,
+	".cr": true, ".ex": true, ".exs": true,
+	".c": true, ".h": true, ".cc": true, ".cpp": true,
+	".hpp": true, ".hh": true,
+	".rb": true, ".cs": true, ".zig": true, ".dart": true,
+	".php": true,
+}
+
+// isNonTestSourceFile reports whether name looks like a production
+// source file: a recognised source extension that does not follow a
+// test-file naming convention (`*_test.<ext>` Go/pytest-adjacent,
+// `test_*` pytest, `*_spec.<ext>` rspec, `*.test.<ext>` / `*.spec.<ext>`
+// JS/TS).
+func isNonTestSourceFile(name string) bool {
+	lower := strings.ToLower(name)
+	ext := filepath.Ext(lower)
+	if !sourceExts[ext] {
+		return false
+	}
+	stem := strings.TrimSuffix(lower, ext)
+	if strings.HasSuffix(stem, "_test") || strings.HasSuffix(stem, "_spec") {
+		return false
+	}
+	if strings.HasPrefix(lower, "test_") {
+		return false
+	}
+	if strings.Contains(lower, ".test.") || strings.Contains(lower, ".spec.") {
+		return false
+	}
+	return true
+}
+
+// dirHasNonTestSourceFile reports whether dir contains at least one
+// non-test source file anywhere under it (skipping the same dirs the
+// flagship walk skips). Empty placeholder dirs — and dirs holding only
+// docs/fixtures or test files — return false, mirroring the scanner's
+// cohort-package placeholder guard.
+func dirHasNonTestSourceFile(dir string) bool {
+	var found bool
+	_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			n := d.Name()
+			if strings.HasPrefix(n, ".") || n == "node_modules" || n == "vendor" || n == "target" || n == "build" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if isNonTestSourceFile(d.Name()) {
+			found = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
 }
 
 // CountSummary returns name → count for a Consumers map, sorted by
