@@ -276,7 +276,7 @@ func TestVersion_SchemaMatchesSnapshot(t *testing.T) {
 	if err := json.Unmarshal(out.Bytes(), &vi); err != nil {
 		t.Fatalf("-version: bad JSON: %v", err)
 	}
-	yaml := toYAML(scanner.Snapshot{}, nil, "")
+	yaml := toYAML(scanner.Snapshot{}, nil, nil, "")
 	if want := "schema_version: " + strconv.Itoa(vi.SchemaVersion); !strings.Contains(yaml, want) {
 		t.Errorf("YAML snapshot missing %q (version reports schema_version=%d):\n%s", want, vi.SchemaVersion, yaml)
 	}

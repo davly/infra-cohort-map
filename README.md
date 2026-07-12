@@ -143,12 +143,45 @@ For each `infrastructure/<infra>`, `engines/<engine>`, and
    `marker.Sign(`, or `MirrorMark.Sign(`.
 4. **KAT-1 byte-identity**: any file under the infra root pins the
    canonical KAT-1 hex `239a7d0d3f1bbe3a98aede01e2ad818c2db60b7177c02e2f015035b2b5b7dbca`.
-5. **Consumer flagships**: count of `flagships/<f>/internal/<infra>`
-   directories (or `flagships/<f>/<dialect>/<infra>` variants). The hit
-   directory must contain at least one non-test source file (any
-   substrate, anywhere under it) — empty placeholder dirs and dirs
-   holding only docs/fixtures/test files do **not** count, mirroring
-   the cohort-package placeholder guard in rule 2.
+5. **Consumer flagships** (`consumer_count` / `consumers`): count of
+   `flagships/<f>/internal/<infra>` directories (or
+   `flagships/<f>/<dialect>/<infra>` variants). The hit directory must
+   contain at least one non-test source file (any substrate, anywhere
+   under it) — empty placeholder dirs and dirs holding only
+   docs/fixtures/test files do **not** count, mirroring the
+   cohort-package placeholder guard in rule 2.
+6. **Module consumers** (`module_consumer_count` / `module_consumers`):
+   for every component whose `go_module` is known, the set of repos —
+   across **all four** layer trees (`infrastructure/`, `engines/`,
+   `foundation/aicore/`, `flagships/`) — whose `go.mod` actually depends
+   on that module. A repo counts when its `go.mod` has a **`require`**
+   directive for the module path, **or** a **`replace`** directive whose
+   target local path resolves to the component's own directory (both
+   forms count; no suffix is added — the value is a clean component/dir
+   name). The component's own module is excluded (no self-edges); `vendor/`
+   and `testdata/` subtrees are skipped. A `go.mod` nested under a
+   component (the `nexus/src/api/go.mod` pattern) is attributed to the
+   top-level component (`nexus`).
+
+### `consumers` (SoftProxy) vs `module_consumers` (receipt)
+
+These two fields answer **different questions** and must not be conflated:
+
+| Field | Trust tier | Detects | Answers |
+|-------|-----------|---------|---------|
+| `consumers` / `consumer_count` | **SoftProxy** — R174 cohort-*pattern* adoption | a same-named `<anchor>/<infra>/` directory with source in it | "which flagships host this component's cohort pattern?" |
+| `module_consumers` / `module_consumer_count` | **Receipt** — a `go.mod`-parsed build fact | a real `require`/local-`replace` of the module | "which repos actually build against this module?" |
+
+The census is a *proxy*: it counts vendored pattern replicas (which often
+carry the component's **name** but import none of its code) and — because
+high-degree libraries are consumed by module path, not by copying a
+same-named dir — it can **invert real dependency degree**. On the live
+estate `aicore` has a directory census of `0` but a **module degree of
+36** (required by 28 infrastructure + 5 engine + 3 flagship modules), while
+`lore` shows a census of `53` but a **module degree of `1`** (only
+`nexus/src/api` actually requires it). Read `module_consumers` for
+blast-radius / deprecation decisions; read `consumers` only as a
+pattern-adoption signal.
 
 ## SVG output
 
@@ -177,10 +210,17 @@ Each component:
 | `package_status`  | map/struct     | per-package booleans (`mirrormark`…`firewall`) |
 | `load_bearing`    | bool           | production code calls `Sign(` |
 | `kat1_pinned`     | bool           | KAT-1 hex found under the root |
-| `consumer_count`  | int            | number of consuming flagships |
+| `consumer_count`  | int            | **SoftProxy** — number of consuming flagships by cohort-pattern dir census |
 | `consumers`       | []string       | sorted flagship names (omitted if none) |
+| `module_consumer_count` | int      | **receipt** — number of repos whose `go.mod` requires/local-replaces this module (present whenever `go_module` is known, even when `0`; omitted for non-Go components) |
+| `module_consumers`| []string       | sorted consumer component/dir names from the `go.mod` parse (omitted if none) |
 | `internal_deps`   | []string       | cross-infra `internal/<other>` deps (omitted if none); the component's own name is excluded — an `internal/<own-name>` local-types package (the delve pattern) is not a dependency edge |
 | `notes`           | []string       | scanner annotations (omitted if none) |
+
+`module_consumer_count` / `module_consumers` are **additive** — they do not
+bump `schema_version` (house convention: additive fields keep the contract
+number stable). Both are sorted, so the same filesystem yields byte-identical
+output.
 
 The YAML form is a strict, hand-rolled subset (no `gopkg.in/yaml.v3`
 dependency); JSON is `encoding/json` `MarshalIndent`. Both sort map keys

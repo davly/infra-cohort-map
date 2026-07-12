@@ -19,6 +19,7 @@ components:
     load_bearing: false
     kat1_pinned: false
     consumer_count: 0
+    module_consumer_count: 0
     notes:
       - "no R174 cohort packages present"
   - name: "aicore"
@@ -36,6 +37,9 @@ components:
     load_bearing: false
     kat1_pinned: false
     consumer_count: 0
+    module_consumer_count: 1
+    module_consumers:
+      - "arbiter"
   - name: "codex"
     layer: "infrastructure"
     path: "infrastructure/codex"
@@ -51,6 +55,7 @@ components:
     load_bearing: false
     kat1_pinned: false
     consumer_count: 0
+    module_consumer_count: 0
     notes:
       - "no R174 cohort packages present"
   - name: "recall"
@@ -71,3 +76,6 @@ components:
     consumers:
       - "academy"
       - "arbiter"
+    module_consumer_count: 1
+    module_consumers:
+      - "academy"

@@ -35,6 +35,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/davly/infra-cohort-map/internal/moddeps"
 	"github.com/davly/infra-cohort-map/internal/relate"
 	"github.com/davly/infra-cohort-map/internal/render"
 	"github.com/davly/infra-cohort-map/internal/scanner"
@@ -241,6 +242,19 @@ func cmdRender(args []string, stdout, stderr io.Writer) int {
 		return exitIO
 	}
 
+	// The go.mod dependency edge is only emitted in the YAML/JSON snapshot,
+	// so it is computed lazily — an SVG render skips the extra layer walk.
+	// It is derived from the pre-projection producers (projection preserves
+	// name/module/path), so a projected snapshot carries the real edges.
+	var modCons map[string][]string
+	if f := strings.ToLower(*format); f == "yaml" || f == "json" {
+		modCons, err = moduleConsumers(common, snap)
+		if err != nil {
+			fmt.Fprintln(stderr, "render: module consumers unavailable:", err)
+			modCons = map[string][]string{}
+		}
+	}
+
 	if strings.EqualFold(*projection, "projected") {
 		snap = applyProjection(snap)
 	}
@@ -260,10 +274,10 @@ func cmdRender(args []string, stdout, stderr io.Writer) int {
 		out := render.Render(snap, consumers, opts)
 		return writeOut(*outPath, out, stdout, stderr)
 	case "yaml":
-		out := []byte(toYAML(snap, consumers, common.checkoutRoot))
+		out := []byte(toYAML(snap, consumers, modCons, common.checkoutRoot))
 		return writeOut(*outPath, out, stdout, stderr)
 	case "json":
-		out, err := toJSON(snap, consumers, common.checkoutRoot)
+		out, err := toJSON(snap, consumers, modCons, common.checkoutRoot)
 		if err != nil {
 			fmt.Fprintln(stderr, "render: json:", err)
 			return exitRender
@@ -309,15 +323,23 @@ func cmdScan(args []string, stdout, stderr io.Writer) int {
 		consumers = relate.Consumers{}
 	}
 
+	modCons, err := moduleConsumers(common, snap)
+	if err != nil {
+		// go.mod dependency edge is additive — surface the reason and emit
+		// the snapshot without it rather than silently reporting zeroes.
+		fmt.Fprintln(stderr, "scan: module consumers unavailable:", err)
+		modCons = map[string][]string{}
+	}
+
 	var out []byte
 	if strings.ToLower(*format) == "json" {
-		out, err = toJSON(snap, consumers, common.checkoutRoot)
+		out, err = toJSON(snap, consumers, modCons, common.checkoutRoot)
 		if err != nil {
 			fmt.Fprintln(stderr, "scan: json:", err)
 			return exitRender
 		}
 	} else {
-		out = []byte(toYAML(snap, consumers, common.checkoutRoot))
+		out = []byte(toYAML(snap, consumers, modCons, common.checkoutRoot))
 	}
 
 	// Always emit the snapshot first so a gate failure still leaves a full
@@ -440,6 +462,36 @@ func componentNames(snap scanner.Snapshot) []string {
 	return names
 }
 
+// moduleConsumers computes the receipt-grade go.mod dependency edge for the
+// scanned producers: for every component that has a go_module, the sorted set
+// of repos (across all four layer trees) whose go.mod require/replace-to-local
+// that module. It is the deterministic counterpart to the relate directory
+// census — see internal/moddeps and the README census-vs-module_deps note.
+//
+// A parse failure over any single root is swallowed inside moddeps (best
+// effort, read-only); the map always carries a key per producer so the emit
+// layer can render a deterministic zero.
+func moduleConsumers(common *commonFlags, snap scanner.Snapshot) (map[string][]string, error) {
+	roots := []moddeps.SearchRoot{
+		{Dir: common.infraDir},
+		{Dir: common.enginesDir},
+		{Dir: common.foundationDir, SingleComponent: true},
+		{Dir: common.flagshipsDir},
+	}
+	var producers []moddeps.Producer
+	for _, c := range snap.Components {
+		if c.GoModule == "" {
+			continue
+		}
+		producers = append(producers, moddeps.Producer{
+			Name:       c.Name,
+			ModulePath: c.GoModule,
+			RootDir:    c.Path,
+		})
+	}
+	return moddeps.CountModuleConsumers(roots, producers)
+}
+
 func countAllConsumers(c relate.Consumers) int {
 	seen := map[string]bool{}
 	for _, fs := range c {
@@ -470,7 +522,7 @@ func applyProjection(snap scanner.Snapshot) scanner.Snapshot {
 // toYAML emits a deterministic YAML representation of the snapshot
 // (pure stdlib — no gopkg.in/yaml.v3 dependency). Format is a strict
 // subset of YAML so external tooling can pin to it.
-func toYAML(snap scanner.Snapshot, cons relate.Consumers, pathRoot string) string {
+func toYAML(snap scanner.Snapshot, cons relate.Consumers, modCons map[string][]string, pathRoot string) string {
 	var sb strings.Builder
 	sb.WriteString("# infra-cohort-map snapshot — auto-generated\n")
 	sb.WriteString("# Do not edit by hand; regenerate with `infra-cohort-map scan`.\n")
@@ -504,6 +556,22 @@ func toYAML(snap scanner.Snapshot, cons relate.Consumers, pathRoot string) strin
 			sb.WriteString("    consumers:\n")
 			for _, f := range cs {
 				sb.WriteString("      - " + yamlStr(f) + "\n")
+			}
+		}
+		// module_consumer_count / module_consumers: the receipt-grade go.mod
+		// dependency edge (see internal/moddeps). Emitted only when the
+		// component's Go module is known — omitted for non-Go components which
+		// have no module path to be required.
+		if c.GoModule != "" {
+			mc := modCons[c.Name]
+			sb.WriteString("    module_consumer_count: " + fmt.Sprintf("%d", len(mc)) + "\n")
+			if len(mc) > 0 {
+				ms := append([]string(nil), mc...)
+				sort.Strings(ms)
+				sb.WriteString("    module_consumers:\n")
+				for _, m := range ms {
+					sb.WriteString("      - " + yamlStr(m) + "\n")
+				}
 			}
 		}
 		if len(c.InternalDeps) > 0 {
@@ -546,21 +614,23 @@ func yamlStr(s string) string {
 // (package_status) are sorted by encoding/json; consumer lists are
 // sorted; paths are checkout-relative — so the output is byte-stable for
 // the same input and machine-independent.
-func toJSON(snap scanner.Snapshot, cons relate.Consumers, pathRoot string) ([]byte, error) {
+func toJSON(snap scanner.Snapshot, cons relate.Consumers, modCons map[string][]string, pathRoot string) ([]byte, error) {
 	type comp struct {
-		Name          string          `json:"name"`
-		Layer         string          `json:"layer"`
-		Path          string          `json:"path"`
-		Substrate     string          `json:"substrate"`
-		GoModule      string          `json:"go_module,omitempty"`
-		PackageStatus map[string]bool `json:"package_status"`
-		CohortCount   int             `json:"cohort_count"`
-		LoadBearing   bool            `json:"load_bearing"`
-		KAT1Pinned    bool            `json:"kat1_pinned"`
-		ConsumerCount int             `json:"consumer_count"`
-		Consumers     []string        `json:"consumers,omitempty"`
-		InternalDeps  []string        `json:"internal_deps,omitempty"`
-		Notes         []string        `json:"notes,omitempty"`
+		Name                string          `json:"name"`
+		Layer               string          `json:"layer"`
+		Path                string          `json:"path"`
+		Substrate           string          `json:"substrate"`
+		GoModule            string          `json:"go_module,omitempty"`
+		PackageStatus       map[string]bool `json:"package_status"`
+		CohortCount         int             `json:"cohort_count"`
+		LoadBearing         bool            `json:"load_bearing"`
+		KAT1Pinned          bool            `json:"kat1_pinned"`
+		ConsumerCount       int             `json:"consumer_count"`
+		Consumers           []string        `json:"consumers,omitempty"`
+		ModuleConsumerCount *int            `json:"module_consumer_count,omitempty"`
+		ModuleConsumers     []string        `json:"module_consumers,omitempty"`
+		InternalDeps        []string        `json:"internal_deps,omitempty"`
+		Notes               []string        `json:"notes,omitempty"`
 	}
 	type doc struct {
 		SchemaVersion    int    `json:"schema_version"`
@@ -581,20 +651,34 @@ func toJSON(snap scanner.Snapshot, cons relate.Consumers, pathRoot string) ([]by
 		}
 		cs := append([]string(nil), cons[c.Name]...)
 		sort.Strings(cs)
+		// module_consumer_count is emitted whenever the Go module is known
+		// (a *int so a genuine 0 is present but a non-Go component omits it);
+		// module_consumers is the sorted receipt-grade edge, omitted if empty.
+		var mcCount *int
+		var mcList []string
+		if c.GoModule != "" {
+			ms := append([]string(nil), modCons[c.Name]...)
+			sort.Strings(ms)
+			n := len(ms)
+			mcCount = &n
+			mcList = ms
+		}
 		d.Components = append(d.Components, comp{
-			Name:          c.Name,
-			Layer:         string(c.Layer),
-			Path:          relativizePath(pathRoot, c.Path),
-			Substrate:     c.Substrate,
-			GoModule:      c.GoModule,
-			PackageStatus: ps,
-			CohortCount:   c.CohortCount,
-			LoadBearing:   c.LoadBearing,
-			KAT1Pinned:    c.KAT1Pinned,
-			ConsumerCount: len(cs),
-			Consumers:     cs,
-			InternalDeps:  c.InternalDeps,
-			Notes:         c.Notes,
+			Name:                c.Name,
+			Layer:               string(c.Layer),
+			Path:                relativizePath(pathRoot, c.Path),
+			Substrate:           c.Substrate,
+			GoModule:            c.GoModule,
+			PackageStatus:       ps,
+			CohortCount:         c.CohortCount,
+			LoadBearing:         c.LoadBearing,
+			KAT1Pinned:          c.KAT1Pinned,
+			ConsumerCount:       len(cs),
+			Consumers:           cs,
+			ModuleConsumerCount: mcCount,
+			ModuleConsumers:     mcList,
+			InternalDeps:        c.InternalDeps,
+			Notes:               c.Notes,
 		})
 	}
 	b, err := json.MarshalIndent(d, "", "  ")

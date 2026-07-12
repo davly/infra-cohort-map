@@ -84,6 +84,17 @@ func scaffoldTree(t *testing.T) (root string, common []string) {
 	mustWrite(t, filepath.Join(flagships, "academy", "internal", "recall"), "x.go", "package recall\n")
 	mustWrite(t, filepath.Join(flagships, "arbiter", "internal", "recall"), "x.go", "package recall\n")
 
+	// go.mod edges make the census-vs-module divergence visible in the golden:
+	// academy REQUIRES recall's module (a real dependency); arbiter only hosts
+	// a recall pattern dir (census hit) but its go.mod REQUIRES + local-REPLACES
+	// aicore instead. So recall is a census-consumer of {academy,arbiter} but a
+	// module-consumer of {academy}; aicore is a census-consumer of none but a
+	// module-consumer of {arbiter} — the receipt inverts the proxy.
+	mustWrite(t, filepath.Join(flagships, "academy"), "go.mod",
+		"module example.com/academy\n\ngo 1.22\n\nrequire example.com/recall v1.0.0\n")
+	mustWrite(t, filepath.Join(flagships, "arbiter"), "go.mod",
+		"module example.com/arbiter\n\ngo 1.22\n\nrequire example.com/aicore v0.8.0\n\nreplace example.com/aicore => ../../foundation/aicore\n")
+
 	common = []string{
 		"--infra-dir=" + infra,
 		"--engines-dir=" + engines,
@@ -338,4 +349,169 @@ func TestGolden_RenderSVG(t *testing.T) {
 	if !bytes.Equal(out.Bytes(), out2.Bytes()) {
 		t.Fatal("render SVG output not byte-identical across runs")
 	}
+}
+
+// --- module_consumers (go.mod receipt-grade dependency edge) ----------
+
+// snapDoc is a partial view of the JSON snapshot exposing both the census
+// (consumer_*) and the receipt (module_consumer_*) fields per component.
+type snapDoc struct {
+	Components []struct {
+		Name                string   `json:"name"`
+		Layer               string   `json:"layer"`
+		GoModule            string   `json:"go_module"`
+		ConsumerCount       int      `json:"consumer_count"`
+		Consumers           []string `json:"consumers"`
+		ModuleConsumerCount *int     `json:"module_consumer_count"`
+		ModuleConsumers     []string `json:"module_consumers"`
+	} `json:"components"`
+}
+
+func parseSnap(t *testing.T, b []byte) snapDoc {
+	t.Helper()
+	var d snapDoc
+	if err := json.Unmarshal(b, &d); err != nil {
+		t.Fatalf("snapshot is not valid JSON: %v\n%s", err, b)
+	}
+	return d
+}
+
+// TestRun_ModuleConsumersDivergeFromCensus asserts the two signals are emitted
+// side by side and diverge exactly as the fidelity audit describes: the
+// scaffold's academy REQUIRES recall (module edge) while arbiter only hosts a
+// recall pattern dir (census edge) and instead REQUIRES+REPLACEs aicore. So
+// recall's census (2) exceeds its module degree (1), and aicore's module
+// degree (1) exceeds its census (0) — the receipt inverts the proxy.
+func TestRun_ModuleConsumersDivergeFromCensus(t *testing.T) {
+	_, common := scaffoldTree(t)
+	var out, errb bytes.Buffer
+	if code := run(append([]string{"scan", "--format=json", "--no-scanned-at"}, common...), &out, &errb); code != exitOK {
+		t.Fatalf("scan json: exit %d stderr=%q", code, errb.String())
+	}
+	d := parseSnap(t, out.Bytes())
+
+	var sawRecall, sawAicore bool
+	for _, c := range d.Components {
+		// Every Go-module component must carry the count (present, may be 0);
+		// non-Go components omit it. All four scaffold components are Go.
+		if c.GoModule != "" && c.ModuleConsumerCount == nil {
+			t.Errorf("%s has go_module %q but no module_consumer_count", c.Name, c.GoModule)
+		}
+		switch c.Name {
+		case "recall":
+			sawRecall = true
+			if c.ConsumerCount != 2 {
+				t.Errorf("recall census consumer_count: got %d want 2", c.ConsumerCount)
+			}
+			if c.ModuleConsumerCount == nil || *c.ModuleConsumerCount != 1 {
+				t.Errorf("recall module_consumer_count: got %v want 1", c.ModuleConsumerCount)
+			}
+			if len(c.ModuleConsumers) != 1 || c.ModuleConsumers[0] != "academy" {
+				t.Errorf("recall module_consumers: got %v want [academy]", c.ModuleConsumers)
+			}
+			if !(c.ConsumerCount > *c.ModuleConsumerCount) {
+				t.Errorf("recall: expected census (%d) > module (%d)", c.ConsumerCount, *c.ModuleConsumerCount)
+			}
+		case "aicore":
+			sawAicore = true
+			if c.ConsumerCount != 0 {
+				t.Errorf("aicore census consumer_count: got %d want 0", c.ConsumerCount)
+			}
+			if c.ModuleConsumerCount == nil || *c.ModuleConsumerCount != 1 {
+				t.Errorf("aicore module_consumer_count: got %v want 1", c.ModuleConsumerCount)
+			}
+			if len(c.ModuleConsumers) != 1 || c.ModuleConsumers[0] != "arbiter" {
+				t.Errorf("aicore module_consumers: got %v want [arbiter]", c.ModuleConsumers)
+			}
+			if !(*c.ModuleConsumerCount > c.ConsumerCount) {
+				t.Errorf("aicore: expected module (%d) > census (%d)", *c.ModuleConsumerCount, c.ConsumerCount)
+			}
+		}
+	}
+	if !sawRecall || !sawAicore {
+		t.Fatalf("missing components: recall=%v aicore=%v", sawRecall, sawAicore)
+	}
+}
+
+// TestRun_RealEstateModuleDegree is the land gate against the live checkout.
+// It skips when the estate is absent (mirrors the real-tree render smoke).
+//
+// It encodes the flow-consumer-graph.md finding as executable invariants
+// rather than a brittle exact count (the estate gains consumers over time and
+// hosts worktree copies, so an `== N` would rot):
+//   - aicore: module degree >= 33 (the audit's floor) while its pattern census
+//     is far smaller — the receipt reveals the hub the proxy hides;
+//   - lore: module degree EXACTLY 1 (nexus) while its census is large — the
+//     proxy inflates a single real consumer into dozens;
+//   - the two signals diverge in OPPOSITE directions.
+//
+// The audit stated 33 for aicore; today's honest parse is higher (extra infra
+// the audit miscounted + a newer flagship consumer). The floor keeps the gate
+// true without pinning a number that legitimately grows.
+func TestRun_RealEstateModuleDegree(t *testing.T) {
+	if _, err := os.Stat("C:/limitless/foundation/aicore"); err != nil {
+		t.Skip("limitless estate not present")
+	}
+	var out, errb bytes.Buffer
+	if code := run([]string{"scan", "--format=json", "--no-scanned-at"}, &out, &errb); code != exitOK {
+		t.Fatalf("real-estate scan: exit %d stderr=%q", code, errb.String())
+	}
+	d := parseSnap(t, out.Bytes())
+
+	byName := map[string]struct {
+		census int
+		module int
+		mods   []string
+	}{}
+	for _, c := range d.Components {
+		m := 0
+		if c.ModuleConsumerCount != nil {
+			m = *c.ModuleConsumerCount
+		}
+		byName[c.Name] = struct {
+			census int
+			module int
+			mods   []string
+		}{c.ConsumerCount, m, c.ModuleConsumers}
+	}
+
+	aic, ok := byName["aicore"]
+	if !ok {
+		t.Fatal("aicore not in snapshot")
+	}
+	const aicoreFloor = 33 // audit-measured minimum; grows as the estate grows
+	if aic.module < aicoreFloor {
+		t.Errorf("aicore module degree: got %d want >= %d; module_consumers=%v", aic.module, aicoreFloor, aic.mods)
+	}
+	if !(aic.module > aic.census) {
+		t.Errorf("aicore inversion broken: module=%d census=%d (module must dwarf the pattern census)", aic.module, aic.census)
+	}
+	// The parse must genuinely span engines + infrastructure, not just one root.
+	for _, want := range []string{"causal", "echo", "oracle", "parallax", "synthesis", "conduit", "nexus", "recall", "vault"} {
+		if !contains(aic.mods, want) {
+			t.Errorf("aicore module_consumers missing %q; got %v", want, aic.mods)
+		}
+	}
+
+	lore, ok := byName["lore"]
+	if !ok {
+		t.Fatal("lore not in snapshot")
+	}
+	if lore.module != 1 || len(lore.mods) != 1 || lore.mods[0] != "nexus" {
+		t.Errorf("lore module degree: got count=%d consumers=%v want 1 [nexus]", lore.module, lore.mods)
+	}
+	if !(lore.census > lore.module) {
+		t.Errorf("lore inversion broken: census=%d module=%d (pattern census must dwarf the single real consumer)", lore.census, lore.module)
+	}
+
+	t.Logf("land-gate receipt: aicore module=%d census=%d | lore module=%d census=%d", aic.module, aic.census, lore.module, lore.census)
+}
+
+func contains(xs []string, s string) bool {
+	for _, x := range xs {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
